@@ -1,0 +1,21 @@
+Falcon Perception
+Copyright 2026 Technology Innovation Institute (TII), UAE
+https://github.com/tiiuae/falcon-perception
+
+This product includes software developed at the Technology Innovation
+Institute (TII), Abu Dhabi, UAE.
+
+If you use Falcon Perception — including its model weights, inference engine,
+or derivative works (e.g. fine-tuned models, adapted architectures) — in any
+public-facing work, publication, or product, please acknowledge the project by:
+
+  1. Retaining this NOTICE file in any redistribution.
+  2. Citing the project in academic or technical publications:
+
+     @preprint{falcon-perception2026,
+       title     = {Falcon Perception: Natively Multimodal Dense Autoregressive
+                    Vision-Language Transformer},
+       author    = {TII Falcon Perception Team},
+       year      = {2025},
+       url       = {https://github.com/tiiuae/falcon-perception}
+     }
