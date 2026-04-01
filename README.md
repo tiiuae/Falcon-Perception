@@ -144,7 +144,7 @@ python demo/ocr_single_mlx.py  # loads a demo sample from OCRBench-v2
 
 | Mode | Best for | How |
 |------|----------|-----|
-| **Plain OCR** | Simple documents, real-world photos, slides, receipts, screenshots | `--task ocr_plain` |
+| **Plain OCR** | Simple documents, real-world photos, slides, receipts, invoices | `--task ocr_plain` |
 | **Layout + OCR** | Complex multi-column documents, academic papers, reports, dense pages | `--task ocr_layout` |
 
 ### Run Multiple Samples with Paged Inference Engine
