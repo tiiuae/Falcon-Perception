@@ -63,6 +63,7 @@ class KVCache:
         else:
             self.keys[layer_id] = k
             self.values[layer_id] = v
+        mx.eval(self.keys[layer_id], self.values[layer_id])
 
         if layer_id == self.num_layers - 1:
             self.pos += k.shape[2]
