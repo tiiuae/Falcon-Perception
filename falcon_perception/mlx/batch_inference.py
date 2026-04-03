@@ -9,8 +9,24 @@ Data preprocessing is framework-agnostic (numpy/PIL); conversion to
 
 from __future__ import annotations
 
+import os
 import mlx.core as mx
 import numpy as np
+
+# Periodic cache clear: default to 50% of Metal recommended working set.
+# Adapts automatically to machine size.  Override with FALCON_CACHE_LIMIT_GB.
+def _get_cache_clear_threshold() -> int:
+    override = os.environ.get("FALCON_CACHE_LIMIT_GB")
+    if override is not None:
+        return int(override) * 1024**3
+    try:
+        total = mx.device_info()["memory_size"]
+    except Exception:
+        total = 16 * 1024**3
+    return min(int(total * 0.5), 16 * 1024**3)
+
+_CACHE_CLEAR_BYTES = _get_cache_clear_threshold()
+_CACHE_CHECK_INTERVAL = 10
 
 from falcon_perception.mlx.attention import create_batch_attention_mask
 from falcon_perception.mlx.kv_cache import KVCache
@@ -256,12 +272,6 @@ class BatchInferenceEngine:
         if seed is not None:
             mx.random.seed(seed)
 
-        # Limit Metal buffer cache to prevent unbounded growth.
-        # Each decode step replaces KV cache buffers (size T → T+1); the old
-        # buffers can't be reused (wrong size) and pile up in the Metal cache.
-        # Without a limit this can reach 40-50 GB over a few hundred steps.
-        _prev_cache_limit = mx.set_cache_limit(1 * 1024**3)  # 1 GB
-
         B, L = tokens.shape
         S = (L + max_new_tokens + block_size - 1) // block_size * block_size
         assert S <= self.model_args.max_seq_len, (
@@ -274,6 +284,7 @@ class BatchInferenceEngine:
             n_heads=self.model_args.n_heads,
             head_dim=self.model_args.head_dim,
             num_layers=self.model_args.n_layers,
+            dtype=self.model.dtype,
         )
 
         padded_tokens_BS = self.pad_input_to_max_length(tokens, max_length=S).astype(mx.int32)
@@ -335,7 +346,9 @@ class BatchInferenceEngine:
         pad_id = self.tokenizer.pad_token_id
         generated_tokens: list[list[int]] = [[] for _ in range(B)]
 
+        _decode_step = 0
         while not all(should_stop) and (pos := kv_cache.get_pos()) < S:
+            _decode_step += 1
             tokens_B1, _, _ = sample_token(logits_BSV[:, -1], temperature=temperature, top_k=top_k)
             tokens_B1 = tokens_B1.astype(mx.int32)
             mx.eval(tokens_B1)
@@ -400,6 +413,10 @@ class BatchInferenceEngine:
 
             mx.eval(logits_BSV, h_BSD)
 
+            if (_decode_step % _CACHE_CHECK_INTERVAL == 0
+                    and mx.get_cache_memory() > _CACHE_CLEAR_BYTES):
+                mx.clear_cache()
+
             for b, t in enumerate(tokens_flat):
                 if t in stop_ids_set:
                     should_stop[b] = True
@@ -426,5 +443,4 @@ class BatchInferenceEngine:
                 task=task,
             )
 
-        mx.set_cache_limit(_prev_cache_limit)
         return padded_tokens_BS, aux_outputs
