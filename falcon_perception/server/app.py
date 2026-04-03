@@ -235,6 +235,11 @@ def create_app(config: ServerConfig) -> FastAPI:
     )
     async def predict(req: PredictionRequest):
         """Run inference from a JSON body (image as URL or base64)."""
+        if req.task == "segmentation" and pool and not any(w.do_segmentation for w in pool.healthy_workers):
+            raise HTTPException(
+                status_code=400,
+                detail="Segmentation is not supported by the loaded model. Use task='detection' instead.",
+            )
         pil_image = _load_image_from_request(req)
         buf = io.BytesIO()
         pil_image.save(buf, format="PNG")
@@ -269,6 +274,11 @@ def create_app(config: ServerConfig) -> FastAPI:
         max_image_size: int = Form(config.max_image_size),
     ):
         """Run inference from a multipart file upload."""
+        if task == "segmentation" and pool and not any(w.do_segmentation for w in pool.healthy_workers):
+            raise HTTPException(
+                status_code=400,
+                detail="Segmentation is not supported by the loaded model. Use task='detection' instead.",
+            )
         data = await image.read()
         pil_image = Image.open(io.BytesIO(data)).convert("RGB")
         try:
@@ -310,8 +320,10 @@ def create_app(config: ServerConfig) -> FastAPI:
         is_ocr = any(w.is_ocr for w in pool.healthy_workers)
         if is_ocr:
             supported_tasks = ["ocr_plain", "ocr_layout"]
-        else:
+        elif any(w.do_segmentation for w in pool.healthy_workers):
             supported_tasks = ["segmentation", "detection"]
+        else:
+            supported_tasks = ["detection"]
 
         return HealthResponse(
             status="ready",
@@ -334,11 +346,19 @@ def create_app(config: ServerConfig) -> FastAPI:
     @app.get("/v1/models")
     async def list_models():
         """OpenAI-compatible model listing."""
+        is_ocr = pool is not None and any(w.is_ocr for w in pool.healthy_workers)
+        has_segm = pool is not None and any(w.do_segmentation for w in pool.healthy_workers)
+        if is_ocr:
+            model_id = "falcon-ocr"
+        elif has_segm:
+            model_id = "falcon-perception"
+        else:
+            model_id = "falcon-perception-300m"
         return {
             "object": "list",
             "data": [
                 {
-                    "id": "falcon-perception",
+                    "id": model_id,
                     "object": "model",
                     "owned_by": "tii",
                 }
@@ -381,6 +401,11 @@ def create_app(config: ServerConfig) -> FastAPI:
         max_size: int = Form(...),
         backend_render: bool = Form(False),
     ):
+        if pool and not any(w.do_segmentation for w in pool.healthy_workers):
+            raise HTTPException(
+                status_code=400,
+                detail="Segmentation is not supported by the loaded model. Use /detect instead.",
+            )
         logger.info("Segment: query='%s', file='%s', minSize=%d, maxSize=%d, backendRender=%d", 
                      query, image_hash, min_size, max_size, backend_render)
 

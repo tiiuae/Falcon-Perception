@@ -323,12 +323,12 @@ class FalconPerception(nn.Module):
             # Bbox size head
             self.size_encoder = FourierEncoder(2, args.size_enc_dim, args.dim)
             self.size_decoder = BboxDecoder(args.dim, args.size_dec_dim, args.size_out_dim)
-            # Segmentation head
-            self.itok_upsampler = AnyUp()
-            self.proj_segm = SegmDecoder(args.dim, args.segm_out_dim, args.num_segm_layers)
-            self.conv_segm = nn.Conv2d(
-                args.dim, args.segm_out_dim, kernel_size=3, padding=1
-            )
+            if args.do_segmentation:
+                self.itok_upsampler = AnyUp()
+                self.proj_segm = SegmDecoder(args.dim, args.segm_out_dim, args.num_segm_layers)
+                self.conv_segm = nn.Conv2d(
+                    args.dim, args.segm_out_dim, kernel_size=3, padding=1
+                )
 
         # Rope
         rope_dim = self.args.head_dim // 2  # 1D+2D rope on each half of head_dim
@@ -367,7 +367,8 @@ class FalconPerception(nn.Module):
             self.coord_decoder = torch.compile(self.coord_decoder, dynamic=True, mode=mode)
             self.size_encoder = torch.compile(self.size_encoder, dynamic=True, mode=mode)
             self.size_decoder = torch.compile(self.size_decoder, dynamic=True, mode=mode)
-            self.itok_upsampler.compile(mode=mode, dynamic=True)
+            if self.args.do_segmentation:
+                self.itok_upsampler.compile(mode=mode, dynamic=True)
         return self
 
     @property
@@ -806,9 +807,9 @@ class FalconPerception(nn.Module):
         B = h_BD.shape[0]
         is_segm_B = tokens_B.view(B) == self.args.seg_token_id   # (B,) bool
 
-        if self.args.perception_heads:
+        if self.args.perception_heads and self.args.do_segmentation:
             segm_BD = self.proj_segm(h_BD)          # (B, 256)
-        else:  # OCR mode
+        else:
             segm_BD = torch.empty(B, 0, device=h_BD.device, dtype=h_BD.dtype)
 
         return segm_BD, is_segm_B

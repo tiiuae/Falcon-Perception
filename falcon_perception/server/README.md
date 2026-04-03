@@ -310,9 +310,9 @@ Use `status` for readiness probes (Kubernetes, HF Spaces, etc.):
 - `"loading"` — engines still initializing
 
 `model_id` echoes the loaded HF model ID; `supported_tasks` lists the tasks
-the model can perform (`["segmentation", "detection"]` for perception models,
-`["ocr_plain", "ocr_layout"]` for OCR models). Clients can use this to
-dynamically configure their UI.
+the model can perform (`["segmentation", "detection"]` for the full perception model,
+`["detection"]` for the perception-300m model, or `["ocr_plain", "ocr_layout"]`
+for OCR models). Clients can use this to dynamically configure their UI.
 
 ## Error Handling
 
@@ -335,12 +335,18 @@ Prediction endpoints return standard HTTP error codes with a JSON body:
 The server enables unrestricted CORS (`allow_origins=["*"]`), so browser-based
 frontends (like the Streamlit demo) can call the API directly without a proxy.
 
-## OCR Support
+## Model Variants
 
-The server auto-detects whether the loaded model is a **perception** model (segmentation /
-detection) or an **OCR** model based on `model_args.perception_heads`. No extra
-configuration is needed — the correct engine (`PagedInferenceEngine` or
-`OCRInferenceEngine`) is selected automatically.
+The server auto-detects the loaded model variant from `config.json`:
+
+| Variant | `perception_heads` | `do_segmentation` | Supported tasks |
+|---------|--------------------|-------------------|-----------------------------|
+| **perception** (full) | True | True | `segmentation`, `detection` |
+| **perception-300m** | True | False | `detection` only |
+| **ocr** | False | N/A | `ocr_plain`, `ocr_layout` |
+
+The correct engine (`PagedInferenceEngine` or `OCRInferenceEngine`) is selected
+automatically. Segmentation requests to a detection-only model return HTTP 400.
 
 Two OCR task modes are available:
 

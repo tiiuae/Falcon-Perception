@@ -97,6 +97,7 @@ def _worker_process_main(
     ready_event,  # mp.Event
     failed_value,  # mp.Value('b', False)
     is_ocr_value,  # mp.Value('b', False)
+    do_segmentation_value,  # mp.Value('b', True)
 ):
     """Entry point for a GPU worker subprocess.
 
@@ -118,6 +119,7 @@ def _worker_process_main(
         torch.cuda.set_device(gpu_id)
         engine = _build_engine(gpu_id, config, log)
         is_ocr_value.value = not engine.model.args.perception_heads
+        do_segmentation_value.value = engine.model.args.do_segmentation
         _warmup_engine(engine, log)
         ready_event.set()
 
@@ -189,7 +191,13 @@ def _build_engine(gpu_id, config, log):
     )
     model = model.to(device=device, dtype=dtype)
     is_ocr = not model_args.perception_heads
-    log.info("Model dtype: %s on %s (variant=%s)", dtype, device, "ocr" if is_ocr else "perception")
+    if is_ocr:
+        _variant_label = "ocr"
+    elif not model_args.do_segmentation:
+        _variant_label = "perception-300m"
+    else:
+        _variant_label = "perception"
+    log.info("Model dtype: %s on %s (variant=%s)", dtype, device, _variant_label)
     if config.compile:
         torch._inductor.config.triton.cudagraphs = False
         model.compile(mode="default")
@@ -233,7 +241,7 @@ def _build_engine(gpu_id, config, log):
     engine._compound_state = {}  # type: ignore[attr-defined]
     engine._layout_threshold = config.layout_threshold  # type: ignore[attr-defined]
 
-    log.info("Engine ready (variant=%s).", "ocr" if is_ocr else "perception")
+    log.info("Engine ready (variant=%s).", _variant_label)
     return engine
 
 
@@ -257,8 +265,9 @@ def _warmup_engine(engine, log):
         task = "ocr"
     else:
         from falcon_perception import build_prompt_for_task
-        prompt = build_prompt_for_task("all objects", "segmentation")
-        task = "segmentation"
+        warmup_task = "segmentation" if engine.model.args.do_segmentation else "detection"
+        prompt = build_prompt_for_task("all objects", warmup_task)
+        task = warmup_task
 
     seq = Sequence(
         text=prompt,
@@ -621,6 +630,7 @@ class WorkerProxy:
         self._ready_event = mp.Event()
         self._failed_value = mp.Value("b", False)
         self._is_ocr_value = mp.Value("b", False)
+        self._do_segmentation_value = mp.Value("b", True)
         self._process: mp.Process | None = None
 
         self._pending: dict[
@@ -641,6 +651,7 @@ class WorkerProxy:
                 self._ready_event,
                 self._failed_value,
                 self._is_ocr_value,
+                self._do_segmentation_value,
             ),
             name=f"engine-gpu{self.gpu_id}",
             daemon=True,
@@ -688,6 +699,10 @@ class WorkerProxy:
     @property
     def is_ocr(self) -> bool:
         return bool(self._is_ocr_value.value)
+
+    @property
+    def do_segmentation(self) -> bool:
+        return bool(self._do_segmentation_value.value)
 
     def get_status(self) -> dict:
         if self.failed:

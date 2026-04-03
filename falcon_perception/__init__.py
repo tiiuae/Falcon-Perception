@@ -13,6 +13,7 @@ __all__ = [
     "setup_torch_config",
     "cuda_timed",
     "PERCEPTION_MODEL_ID",
+    "PERCEPTION_300M_MODEL_ID",
     "OCR_MODEL_ID",
     "load_from_hf_export",
     "load_and_prepare_model",
@@ -45,6 +46,7 @@ class ModelArgs:
     size_dec_dim: int = 8192
     size_out_dim: int = 2048
     perception_heads: bool = True
+    do_segmentation: bool = True
     segm_out_dim: int = 256
     num_segm_layers: int = 3
 
@@ -67,6 +69,11 @@ class ModelArgs:
 def get_model_args(variant: str):
     if variant == "perception":
         return ModelArgs(perception_heads=True)
+    if variant == "perception-300m":
+        return ModelArgs(
+            n_layers=22, head_dim=64, dim=768, ffn_dim=2304,
+            perception_heads=True, do_segmentation=False,
+        )
     if variant == "ocr":
         return ModelArgs(n_layers=22, head_dim=64, dim=768, ffn_dim=2304, perception_heads=False)
     raise ValueError("Unknown model variant")
@@ -77,8 +84,12 @@ class _FalconTokenizer:
     Replaces the previous ``transformers.AutoTokenizer`` dependency.
     """
 
+    _TOKENIZER_FILES = ("tokenizer.json", "tokenizer_config.json", "special_tokens_map.json")
+
     def __init__(self, path: str):
         from tokenizers import Tokenizer
+
+        self._source_dir = path
 
         tok_file = os.path.join(path, "tokenizer.json")
         self._tok = Tokenizer.from_file(tok_file)
@@ -131,6 +142,17 @@ class _FalconTokenizer:
 
     def convert_tokens_to_ids(self, token: str) -> int | None:
         return self._tok.token_to_id(token)
+
+    def save_pretrained(self, out_dir) -> None:
+        """Copy tokenizer files to *out_dir* (mirrors the old transformers API)."""
+        import shutil
+
+        out_dir = str(out_dir)
+        os.makedirs(out_dir, exist_ok=True)
+        for fname in self._TOKENIZER_FILES:
+            src = os.path.join(self._source_dir, fname)
+            if os.path.isfile(src):
+                shutil.copy2(src, os.path.join(out_dir, fname))
 
 
 def get_tokenizer(path):
@@ -204,7 +226,22 @@ class cuda_timed:
 # ── Model loading & prompt utilities ───────────────────────────────────
 
 PERCEPTION_MODEL_ID = "tiiuae/Falcon-Perception"
+PERCEPTION_300M_MODEL_ID = "tiiuae/Falcon-Perception-300M"
 OCR_MODEL_ID = "tiiuae/Falcon-OCR"
+
+
+def _detect_variant(export_dir: Path) -> str:
+    """Auto-detect model variant from the exported config.json."""
+    config_path = export_dir / "config.json"
+    if not config_path.exists():
+        return "perception"
+    cfg = json.loads(config_path.read_text(encoding="utf-8"))
+    archs = cfg.get("architectures", [])
+    if "FalconOCRForCausalLM" in archs:
+        return "ocr"
+    if cfg.get("do_segmentation") is False:
+        return "perception-300m"
+    return "perception"
 
 
 def load_from_hf_export(
@@ -238,12 +275,7 @@ def load_from_hf_export(
 
     tokenizer = get_tokenizer(str(export_dir))
 
-    variant = "perception"
-    config_path = export_dir / "config.json"
-    if config_path.exists():
-        archs = json.loads(config_path.read_text(encoding="utf-8")).get("architectures", [])
-        if "FalconOCRForCausalLM" in archs:
-            variant = "ocr"
+    variant = _detect_variant(export_dir)
 
     model_args = get_model_args(variant)
     model_args.update(tokenizer)
@@ -251,7 +283,7 @@ def load_from_hf_export(
     state = safetensors_load_file(str(export_dir / "model.safetensors"))
     model = FalconPerception(model_args).eval()
     model.load_state_dict(state, strict=True)
-    print(f"  Variant: {variant} (perception_heads={model_args.perception_heads})")
+    print(f"  Variant: {variant} (perception_heads={model_args.perception_heads}, do_segmentation={model_args.do_segmentation})")
     return model, tokenizer, model_args
 
 
@@ -302,12 +334,7 @@ def load_from_hf_export_mlx(
 
     tokenizer = get_tokenizer(str(export_dir))
 
-    variant = "perception"
-    config_path = export_dir / "config.json"
-    if config_path.exists():
-        archs = json.loads(config_path.read_text(encoding="utf-8")).get("architectures", [])
-        if "FalconOCRForCausalLM" in archs:
-            variant = "ocr"
+    variant = _detect_variant(export_dir)
 
     model_args = get_model_args(variant)
     model_args.update(tokenizer)
@@ -322,7 +349,7 @@ def load_from_hf_export_mlx(
     casted = tree_map(lambda x: x.astype(mx_dtype), model.parameters())
     model.update(casted)
 
-    print(f"  Variant: {variant} (perception_heads={model_args.perception_heads})")
+    print(f"  Variant: {variant} (perception_heads={model_args.perception_heads}, do_segmentation={model_args.do_segmentation})")
     print(f"  MLX model ready (dtype={dtype}).\n")
     return model, tokenizer, model_args
 

@@ -60,6 +60,10 @@ def main(
     )
     resolved_device = model.device
 
+    if task == "segmentation" and not model_args.do_segmentation:
+        print("Model does not support segmentation (do_segmentation=False), falling back to detection.")
+        task = "detection"
+
     if image is not None:
         pil_image = load_image(image).convert("RGB")
     else:

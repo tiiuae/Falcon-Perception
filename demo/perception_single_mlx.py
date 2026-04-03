@@ -134,6 +134,10 @@ def main():
     )
     timings["model_load"] = time.perf_counter() - t0
 
+    if args.task == "segmentation" and not model_args.do_segmentation:
+        print("Model does not support segmentation (do_segmentation=False), falling back to detection.")
+        args.task = "detection"
+
     # ── Image loading ─────────────────────────────────────────────────
     if args.image is not None:
         pil_image = load_image(args.image).convert("RGB")

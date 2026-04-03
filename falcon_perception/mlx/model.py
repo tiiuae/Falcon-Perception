@@ -232,9 +232,10 @@ class FalconPerception(nn.Module):
             self.coord_decoder = BboxDecoder(args.dim, args.coord_dec_dim, args.coord_out_dim)
             self.size_encoder = FourierEncoder(2, args.size_enc_dim, args.dim)
             self.size_decoder = BboxDecoder(args.dim, args.size_dec_dim, args.size_out_dim)
-            self.itok_upsampler = AnyUp()
-            self.proj_segm = SegmDecoder(args.dim, args.segm_out_dim, args.num_segm_layers)
-            self.conv_segm = nn.Conv2d(args.dim, args.segm_out_dim, kernel_size=3, padding=1)
+            if args.do_segmentation:
+                self.itok_upsampler = AnyUp()
+                self.proj_segm = SegmDecoder(args.dim, args.segm_out_dim, args.num_segm_layers)
+                self.conv_segm = nn.Conv2d(args.dim, args.segm_out_dim, kernel_size=3, padding=1)
 
         # RoPE
         rope_dim = args.head_dim // 2
@@ -520,7 +521,7 @@ class FalconPerception(nn.Module):
     def get_segm_tokens(self, h_BD, tokens_B):
         B = h_BD.shape[0]
         is_segm_B = tokens_B.reshape(B) == self.args.seg_token_id
-        if self.args.perception_heads:
+        if self.args.perception_heads and self.args.do_segmentation:
             segm_BD = self.proj_segm(h_BD)
         else:
             segm_BD = mx.zeros((B, 0))
