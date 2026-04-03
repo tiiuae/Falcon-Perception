@@ -119,6 +119,8 @@ def main():
     parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument("--min-dim", type=int, default=256)
     parser.add_argument("--max-dim", type=int, default=1024)
+    parser.add_argument("--metal-cache-limit-gb", type=int, default=0,
+                        help="Metal buffer cache limit in GB (0=unlimited, 4-8 recommended for bounded memory)")
     parser.add_argument("--out-dir", type=str, default="./outputs/mlx")
     args = parser.parse_args()
 
@@ -193,6 +195,7 @@ def main():
         max_new_tokens=args.max_new_tokens,
         temperature=args.temperature,
         task=args.task,
+        metal_cache_limit_gb=args.metal_cache_limit_gb,
     )
     timings["generation"] = time.perf_counter() - t0
 
