@@ -1,10 +1,16 @@
 # Copyright (c) 2025 Technology Innovation Institute (TII), UAE.
 
 from dataclasses import dataclass
+from importlib.metadata import PackageNotFoundError, version
 import json
 import os
 from pathlib import Path
 from typing import Any
+
+try:
+    __version__ = version("falcon-perception")
+except PackageNotFoundError:
+    __version__ = "0.0.0-dev"
 
 __all__ = [
     "ModelArgs",

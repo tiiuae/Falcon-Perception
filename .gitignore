@@ -2,3 +2,5 @@
 outputs*/
 *.egg-info/
 *.DS_Store
+dist/
+build/

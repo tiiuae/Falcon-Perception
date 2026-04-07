@@ -7,8 +7,32 @@ name = "falcon-perception"
 version = "0.1.0"
 description = "Falcon Perception is a dense vision-language model that performs object detection, instance segmentation, and OCR from natural language queries."
 readme = "README.md"
-license = {file = "LICENSE"}
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
 requires-python = ">=3.10"
+authors = [{name = "Technology Innovation Institute"}]
+maintainers = [{name = "Phuc H. Le Khac", email = "phuc.lekhac@tii.ae"}]
+keywords = [
+    "vision-language-model",
+    "object-detection",
+    "instance-segmentation",
+    "ocr",
+    "falcon",
+    "deep-learning",
+    "computer-vision",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Scientific/Engineering :: Image Recognition",
+]
 dependencies = [
     # Core (framework-agnostic)
     "einops>=0.8.1",
@@ -56,6 +80,12 @@ demo = [
     "streamlit>=1.52.2",
     "requests>=2.31.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/tiiuae/Falcon-Perception"
+Repository = "https://github.com/tiiuae/Falcon-Perception"
+Issues = "https://github.com/tiiuae/Falcon-Perception/issues"
+"Hugging Face" = "https://huggingface.co/tiiuae/Falcon-Perception"
 
 [tool.setuptools.packages.find]
 where = ["."]
