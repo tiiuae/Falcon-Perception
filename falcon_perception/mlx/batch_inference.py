@@ -15,18 +15,21 @@ import numpy as np
 
 # Periodic cache clear: default to 50% of Metal recommended working set.
 # Adapts automatically to machine size.  Override with FALCON_CACHE_LIMIT_GB.
+
+# Periodic cache clear threshold: default to 50% of Metal recommended working
+# set. Override with FALCON_METAL_CACHE_LIMIT_GB env var.
 def _get_cache_clear_threshold() -> int:
-    override = os.environ.get("FALCON_CACHE_LIMIT_GB")
+    override = os.environ.get("FALCON_METAL_CACHE_LIMIT_GB")
     if override is not None:
         return int(override) * 1024**3
     try:
         total = mx.device_info()["memory_size"]
     except Exception:
         total = 16 * 1024**3
-    return min(int(total * 0.5), 16 * 1024**3)
+    return max(int(total * 0.5), 16 * 1024**3)
 
 _CACHE_CLEAR_BYTES = _get_cache_clear_threshold()
-_CACHE_CHECK_INTERVAL = 10
+_CACHE_CHECK_INTERVAL = int(os.environ.get("FALCON_METAL_CACHE_CHECK_INTERVAL", "10"))
 
 from falcon_perception.mlx.attention import create_batch_attention_mask
 from falcon_perception.mlx.kv_cache import KVCache
