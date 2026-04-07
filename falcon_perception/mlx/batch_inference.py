@@ -9,8 +9,27 @@ Data preprocessing is framework-agnostic (numpy/PIL); conversion to
 
 from __future__ import annotations
 
+import os
 import mlx.core as mx
 import numpy as np
+
+# Periodic cache clear: default to 50% of Metal recommended working set.
+# Adapts automatically to machine size.  Override with FALCON_CACHE_LIMIT_GB.
+
+# Periodic cache clear threshold: default to 50% of Metal recommended working
+# set. Override with FALCON_METAL_CACHE_LIMIT_GB env var.
+def _get_cache_clear_threshold() -> int:
+    override = os.environ.get("FALCON_METAL_CACHE_LIMIT_GB")
+    if override is not None:
+        return int(override) * 1024**3
+    try:
+        total = mx.device_info()["memory_size"]
+    except Exception:
+        total = 16 * 1024**3
+    return max(int(total * 0.5), 16 * 1024**3)
+
+_CACHE_CLEAR_BYTES = _get_cache_clear_threshold()
+_CACHE_CHECK_INTERVAL = int(os.environ.get("FALCON_METAL_CACHE_CHECK_INTERVAL", "10"))
 
 from falcon_perception.mlx.attention import create_batch_attention_mask
 from falcon_perception.mlx.kv_cache import KVCache
@@ -133,42 +152,57 @@ def _dedup_single_coord(
 class AuxOutput:
     """Lightweight aux output accumulator for MLX batch inference.
 
-    Stores bbox / segmentation predictions as mx.arrays during decode,
-    materialises to CPU at finalization.
+    Stores bbox predictions as numpy arrays (tiny: 2 floats each) to avoid
+    holding MLX lazy-graph references that prevent memory reclamation.
+    Segmentation embeddings stay as evaluated mx.arrays for ``mx.einsum``
+    at finalization.
     """
 
     def __init__(self):
-        self._coord_xy: list[mx.array] = []
-        self._size_hw: list[mx.array] = []
-        self._is_coord: list[mx.array] = []
-        self._is_size: list[mx.array] = []
+        self._coord_xy: list[np.ndarray] = []
+        self._size_hw: list[np.ndarray] = []
+        self._is_coord: list[bool] = []
+        self._is_size: list[bool] = []
         self._segm_embeds: list[mx.array] = []
         self.bboxes_raw: list[dict] = []
         self.masks_rle: list[dict] = []
+        # Incremental history for coord_history_raw (mirrors PyTorch pattern).
+        self._xy_cat: np.ndarray | None = None
+        self._is_coord_cat: np.ndarray | None = None
 
     def append_bbox(self, xy, hw, is_coord, is_size):
-        self._coord_xy.append(xy)
-        self._size_hw.append(hw)
-        self._is_coord.append(is_coord)
-        self._is_size.append(is_size)
+        xy_np = np.array(xy)
+        self._coord_xy.append(xy_np)
+        self._size_hw.append(np.array(hw))
+        ic = bool(np.array(is_coord).item())
+        self._is_coord.append(ic)
+        self._is_size.append(bool(np.array(is_size).item()))
+        # Incremental concat for coord_history_raw (avoids O(N²) re-stacking).
+        xy_row = xy_np[np.newaxis, :]
+        ic_row = np.array([ic])
+        if self._xy_cat is None:
+            self._xy_cat = xy_row
+            self._is_coord_cat = ic_row
+        else:
+            self._xy_cat = np.concatenate([self._xy_cat, xy_row])
+            self._is_coord_cat = np.concatenate([self._is_coord_cat, ic_row])
 
     def append_segm(self, embed):
+        mx.eval(embed)
         self._segm_embeds.append(embed)
 
     def coord_history_raw(self):
-        if not self._coord_xy:
+        if self._xy_cat is None:
             return None
-        xy_cat = mx.stack(self._coord_xy)
-        is_coord_cat = mx.stack(self._is_coord)
-        return xy_cat, is_coord_cat
+        return mx.array(self._xy_cat), mx.array(self._is_coord_cat)
 
     def materialize_bboxes(self) -> list[dict]:
         if not self._coord_xy:
             return self.bboxes_raw
-        xy = np.array(mx.stack(self._coord_xy))
-        hw = np.array(mx.stack(self._size_hw))
-        is_coord = np.array(mx.stack(self._is_coord))
-        is_size = np.array(mx.stack(self._is_size))
+        xy = np.stack(self._coord_xy)
+        hw = np.stack(self._size_hw)
+        is_coord = np.array(self._is_coord)
+        is_size = np.array(self._is_size)
 
         result = []
         for i in range(len(xy)):
@@ -253,6 +287,7 @@ class BatchInferenceEngine:
             n_heads=self.model_args.n_heads,
             head_dim=self.model_args.head_dim,
             num_layers=self.model_args.n_layers,
+            dtype=self.model.dtype,
         )
 
         padded_tokens_BS = self.pad_input_to_max_length(tokens, max_length=S).astype(mx.int32)
@@ -314,7 +349,9 @@ class BatchInferenceEngine:
         pad_id = self.tokenizer.pad_token_id
         generated_tokens: list[list[int]] = [[] for _ in range(B)]
 
+        _decode_step = 0
         while not all(should_stop) and (pos := kv_cache.get_pos()) < S:
+            _decode_step += 1
             tokens_B1, _, _ = sample_token(logits_BSV[:, -1], temperature=temperature, top_k=top_k)
             tokens_B1 = tokens_B1.astype(mx.int32)
             mx.eval(tokens_B1)
@@ -333,6 +370,9 @@ class BatchInferenceEngine:
                 xy_B2, hw_B2, is_coord_B, is_size_B, coord_logits = self.model.sample_bbox(
                     h_last, tokens_B1.squeeze(-1),
                 )
+                # Materialize bbox predictions so stored slices don't hold
+                # the full model computation graph alive in MLX's lazy evaluator.
+                mx.eval(xy_B2, hw_B2, is_coord_B, is_size_B, coord_logits)
 
                 if coord_dedup_threshold > 0:
                     for b in range(B):
@@ -359,6 +399,7 @@ class BatchInferenceEngine:
                     if segm_indices:
                         segm_h = h_BSD[mx.array(segm_indices), -1, :]
                         segm_embeds = self.model.proj_segm(segm_h)
+                        mx.eval(segm_embeds)
                         for i, b in enumerate(segm_indices):
                             aux_outputs[b].append_segm(segm_embeds[i])
             else:
@@ -374,6 +415,10 @@ class BatchInferenceEngine:
             )
 
             mx.eval(logits_BSV, h_BSD)
+
+            if (_decode_step % _CACHE_CHECK_INTERVAL == 0
+                    and mx.get_cache_memory() > _CACHE_CLEAR_BYTES):
+                mx.clear_cache()
 
             for b, t in enumerate(tokens_flat):
                 if t in stop_ids_set:
