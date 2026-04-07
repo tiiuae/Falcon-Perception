@@ -268,15 +268,9 @@ class BatchInferenceEngine:
         seed: int | None = None,
         coord_dedup_threshold: float = 0.01,
         task: str = "segmentation",
-        metal_cache_limit_gb: int = 0,
     ):
         if seed is not None:
             mx.random.seed(seed)
-
-        if metal_cache_limit_gb > 0:
-            _prev_cache_limit = mx.set_cache_limit(metal_cache_limit_gb * 1024**3)
-        else:
-            _prev_cache_limit = None
 
         B, L = tokens.shape
         S = (L + max_new_tokens + block_size - 1) // block_size * block_size
@@ -449,6 +443,4 @@ class BatchInferenceEngine:
                 task=task,
             )
 
-        if _prev_cache_limit is not None:
-            mx.set_cache_limit(_prev_cache_limit)
         return padded_tokens_BS, aux_outputs
