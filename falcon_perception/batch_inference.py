@@ -147,10 +147,11 @@ class KVCache(KVCacheBase):
 
 
 class BatchInferenceEngine:
-    def __init__(self, model: FalconPerception, tokenizer):
+    def __init__(self, model: FalconPerception, tokenizer, kernel_options: dict | None = None):
         self.model = model
         self.model_args = model.args
         self.tokenizer = tokenizer
+        self.kernel_options = kernel_options or {}
 
     def pad_input_to_max_length(self, tokens_BS: Tensor, max_length: int):
         B, S = tokens_BS.size()
@@ -239,6 +240,7 @@ class BatchInferenceEngine:
             coord_xy=coord_xy,
             size_hw=size_hw,
             img_scatter_info=img_scatter_info or None,
+            flex_attn_kernel_options=self.kernel_options or None,
         )
 
         hr_image_features = None
@@ -296,6 +298,7 @@ class BatchInferenceEngine:
                 coord_xy=xy_b2.to(self.model.dtype),
                 size_hw=hw_b2.to(self.model.dtype),
                 kv_cache=kv_cache,
+                flex_attn_kernel_options=self.kernel_options or None,
             )
 
             hit_stop_B = torch.isin(tokens_B1, stop_ids).any(dim=-1)

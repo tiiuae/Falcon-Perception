@@ -42,6 +42,7 @@ def main(
     device: str | None = None,
     dtype: Literal["bfloat16", "float32", "float"] = "float32",
     engine_type: Literal["batch", "paged"] = "paged",
+    flex_attn_safe: bool = False,
     out_dir: str = "./outputs/",
     compile: bool = True,
     cudagraph: bool = True,
@@ -49,7 +50,11 @@ def main(
     """Run Falcon Perception (detection/segmentation) on a single image.
 
     If --image is omitted, a sample is streamed from the PBench dataset.
+
+    Use --flex-attn-safe on GPUs with limited per-SM shared memory
+    (A40, RTX 3090/4090, L40) to avoid FlexAttention Triton OOM. See README.
     """
+    kernel_options = {"BLOCK_M": 64, "BLOCK_N": 64, "num_stages": 1} if flex_attn_safe else {}
     model, tokenizer, model_args = load_and_prepare_model(
         hf_model_id=hf_model_id or PERCEPTION_MODEL_ID,
         hf_revision=hf_revision,
@@ -112,6 +117,7 @@ def main(
             prefill_length_limit=8192,
             enable_hr_cache=False,
             capture_cudagraph=cudagraph,
+            kernel_options=kernel_options or None,
         )
 
         prompt = build_prompt_for_task(query, task)
@@ -171,7 +177,7 @@ def main(
         from falcon_perception.visualization_utils import render_batch_inference_outputs
 
         prompt = build_prompt_for_task(query, task)
-        engine = BatchInferenceEngine(model, tokenizer)
+        engine = BatchInferenceEngine(model, tokenizer, kernel_options=kernel_options or None)
         batch_inputs = process_batch_and_generate(
             tokenizer,
             [(pil_image, prompt)],

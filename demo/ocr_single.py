@@ -32,6 +32,7 @@ def main(
     hf_local_dir: str | None = None,
     device: str | None = None,
     dtype: Literal["bfloat16", "float", "float32"] = "float32",
+    flex_attn_safe: bool = False,
     out_dir: str = "./outputs/",
     compile: bool = True,
     cudagraph: bool = True,
@@ -39,7 +40,11 @@ def main(
     """Run Falcon OCR on a single image.
 
     If --image is omitted, a sample is loaded from OCRBench-v2.
+
+    Use --flex-attn-safe on GPUs with limited per-SM shared memory
+    (A40, RTX 3090/4090, L40) to avoid FlexAttention Triton OOM. See README.
     """
+    kernel_options = {"BLOCK_M": 64, "BLOCK_N": 64, "num_stages": 1} if flex_attn_safe else None
     model, tokenizer, model_args = load_and_prepare_model(
         hf_model_id=hf_model_id or OCR_MODEL_ID,
         hf_revision=hf_revision,
@@ -75,7 +80,7 @@ def main(
 
     image_processor = ImageProcessor(patch_size=16, merge_size=1)
 
-    engine = OCRInferenceEngine(model, tokenizer, image_processor, capture_cudagraph=cudagraph)
+    engine = OCRInferenceEngine(model, tokenizer, image_processor, capture_cudagraph=cudagraph, kernel_options=kernel_options)
 
     print("Running inference ...")
 
