@@ -43,7 +43,7 @@ class ServerConfig:
     max_seq_length: int = field(default_factory=lambda: _env_int("MAX_SEQ_LENGTH", 2048))
     n_pages: int = field(default_factory=lambda: _env_int("N_PAGES", 32))
     page_size: int = field(default_factory=lambda: _env_int("PAGE_SIZE", 64))
-    prefill_length_limit: int = field(default_factory=lambda: _env_int("PREFILL_LENGTH_LIMIT", 512))
+    prefill_length_limit: int = field(default_factory=lambda: _env_int("PREFILL_LENGTH_LIMIT", 1024))
     max_decode_steps_between_prefills: int = field(default_factory=lambda: _env_int("MAX_DECODE_STEPS_BETWEEN_PREFILLS", 16))
     temperature: float = field(default_factory=lambda: _env_float("TEMPERATURE", 0.0))
     top_k: int | None = field(default_factory=lambda: _env_int("TOP_K", None) if os.environ.get("TOP_K") else None)

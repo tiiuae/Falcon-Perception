@@ -1,0 +1,3 @@
+# Agentic Perception — extra dependencies (on top of falcon-perception base env)
+# The base env already provides: fastapi, uvicorn, python-multipart, numpy, pillow, requests
+google-genai>=1.0.0

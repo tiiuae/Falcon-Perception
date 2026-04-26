@@ -1,0 +1,712 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Agentic Perception</title>
+  <style>
+    :root {
+      --video-width: 100%;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box
+    }
+
+    .aligned-section {
+      max-width: var(--video-width);
+      margin-left: auto;
+      margin-right: auto;
+      width: 100%;
+    }
+
+    body {
+      font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+      background: #060608;
+      color: #e0e0e0;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── Header ── */
+    header {
+      border-bottom: 1px solid rgba(255, 255, 255, .06);
+      background: rgba(10, 10, 14, .95);
+      flex-shrink: 0;
+      backdrop-filter: blur(12px);
+    }
+
+    header .header-inner {
+      display: flex;
+      align-items: center;
+      padding: 12px 24px;
+      max-width: var(--video-width);
+      margin: 0 auto;
+    }
+
+    header h1 {
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: .8px;
+      color: #fff
+    }
+
+    header h1 span {
+      background: linear-gradient(135deg, #00d4aa, #00b4d8);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .status-bar {
+      margin-left: auto;
+      display: flex;
+      gap: 18px;
+      font-size: 11px;
+      color: #555;
+      letter-spacing: .3px
+    }
+
+    .status-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      text-transform: uppercase;
+      font-weight: 500
+    }
+
+    .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #333;
+      transition: background .3s
+    }
+
+    .dot.ok {
+      background: #00d4aa;
+      box-shadow: 0 0 6px rgba(0, 212, 170, .4)
+    }
+
+    .dot.err {
+      background: #ff4444;
+      box-shadow: 0 0 6px rgba(255, 68, 68, .4)
+    }
+
+    /* ── Camera ── */
+    #camera-container {
+      flex: 1;
+      position: relative;
+      background: #000;
+      overflow: hidden;
+      min-height: 0;
+    }
+
+    #camera-container::before {
+      content: 'AGENTIC PERCEPTION';
+      position: absolute;
+      top: 14px;
+      left: 18px;
+      font-size: 9px;
+      letter-spacing: 3px;
+      color: rgba(255, 255, 255, .08);
+      font-weight: 700;
+      z-index: 5;
+      pointer-events: none;
+    }
+
+    #camera-wrapper {
+      width: 100%;
+      height: 100%;
+      position: relative;
+      transition: transform .5s cubic-bezier(.25, .46, .45, .94);
+      transform-origin: 0 0;
+    }
+
+    #video {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      display: block
+    }
+
+    #overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none
+    }
+
+    #camera-status {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: #333;
+      font-size: 13px;
+      z-index: 10;
+      display: none;
+      letter-spacing: .5px;
+    }
+
+    #camera-container.no-camera #camera-status {
+      display: block
+    }
+
+    #camera-container.analyzing::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border: 2px solid #00d4aa;
+      pointer-events: none;
+      z-index: 5;
+      animation: analyze-pulse 1.5s ease-in-out infinite;
+    }
+
+    @keyframes analyze-pulse {
+
+      0%,
+      100% {
+        opacity: .1
+      }
+
+      50% {
+        opacity: .6
+      }
+    }
+
+    /* ── Chat ── */
+    #chat {
+      height: 160px;
+      overflow-y: auto;
+      border-top: 1px solid rgba(255, 255, 255, .06);
+      background: rgba(10, 10, 14, .95);
+      flex-shrink: 0;
+      backdrop-filter: blur(8px);
+    }
+
+    #chat .chat-inner {
+      padding: 10px 24px;
+      max-width: var(--video-width);
+      margin: 0 auto;
+    }
+
+    #chat::-webkit-scrollbar {
+      width: 4px
+    }
+
+    #chat::-webkit-scrollbar-thumb {
+      background: #222;
+      border-radius: 4px
+    }
+
+    .msg {
+      margin: 5px 0;
+      font-size: 13px;
+      line-height: 1.6;
+      padding: 4px 0 4px 12px
+    }
+
+    .msg .role {
+      font-weight: 600;
+      margin-right: 8px;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .5px
+    }
+
+    .msg.user {
+      border-left: 2px solid #00d4aa
+    }
+
+    .msg.user .role {
+      color: #00d4aa
+    }
+
+    .msg.assistant {
+      border-left: 2px solid #444
+    }
+
+    .msg.assistant .role {
+      color: #888
+    }
+
+    .msg.system {
+      border-left: 2px solid #1a1a1a;
+      color: #555;
+      font-style: italic;
+      font-size: 12px
+    }
+
+    /* ── Input ── */
+    #input-bar {
+      border-top: 1px solid rgba(255, 255, 255, .06);
+      background: rgba(8, 8, 12, .98);
+      flex-shrink: 0;
+    }
+
+    #input-bar .input-inner {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 24px;
+      max-width: var(--video-width);
+      margin: 0 auto;
+    }
+
+    #text-input {
+      flex: 1;
+      background: rgba(255, 255, 255, .04);
+      border: 1px solid rgba(255, 255, 255, .08);
+      border-radius: 10px;
+      padding: 11px 16px;
+      color: #e0e0e0;
+      font-size: 13px;
+      outline: none;
+      font-family: inherit;
+      transition: border-color .2s;
+    }
+
+    #text-input:focus {
+      border-color: rgba(0, 212, 170, .5)
+    }
+
+    #text-input::placeholder {
+      color: #3a3a3a
+    }
+
+    .btn {
+      height: 40px;
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, .08);
+      background: rgba(255, 255, 255, .04);
+      color: #888;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all .15s;
+      flex-shrink: 0;
+      padding: 0 14px;
+      gap: 6px;
+      font-size: 12px;
+      font-family: inherit;
+      font-weight: 500;
+      letter-spacing: .3px;
+    }
+
+    .btn svg {
+      width: 15px;
+      height: 15px;
+      stroke: currentColor;
+      fill: none;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round
+    }
+
+    .btn:hover {
+      background: rgba(255, 255, 255, .08);
+      color: #fff;
+      border-color: rgba(255, 255, 255, .15)
+    }
+
+    .btn:active {
+      transform: scale(.96)
+    }
+
+    #send-btn {
+      background: linear-gradient(135deg, #00d4aa, #00b4d8);
+      color: #000;
+      border: none;
+      font-weight: 700;
+      letter-spacing: .5px;
+    }
+
+    #send-btn:hover {
+      filter: brightness(1.1)
+    }
+
+    #send-btn:disabled {
+      opacity: .35;
+      cursor: not-allowed;
+      filter: none
+    }
+
+    #mic-btn.recording {
+      background: rgba(255, 68, 68, .15);
+      color: #ff4444;
+      border-color: rgba(255, 68, 68, .4);
+      animation: rec-pulse 1s infinite;
+    }
+
+    #reset-btn:hover {
+      border-color: rgba(255, 68, 68, .4);
+      color: #ff4444
+    }
+
+    @keyframes rec-pulse {
+
+      0%,
+      100% {
+        opacity: 1
+      }
+
+      50% {
+        opacity: .5
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <header>
+    <div class="header-inner">
+      <h1><span>Agentic</span> Perception</h1>
+      <div class="status-bar">
+        <div class="status-item">
+          <div class="dot" id="fp-dot"></div>Falcon Perception
+        </div>
+        <div class="status-item">
+          <div class="dot" id="llm-dot"></div><span id="llm-label">LLM</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <div id="camera-container">
+    <div id="camera-wrapper">
+      <video id="video" autoplay playsinline muted></video>
+      <canvas id="overlay"></canvas>
+    </div>
+    <div id="camera-status">Camera unavailable</div>
+  </div>
+
+  <div id="chat">
+    <div class="chat-inner">
+      <div id="messages"></div>
+    </div>
+  </div>
+
+  <div id="input-bar">
+    <div class="input-inner">
+      <input type="text" id="text-input" placeholder="Ask about objects in the scene…" autocomplete="off" />
+      <button class="btn" id="mic-btn" title="Hold to record voice">
+        <svg viewBox="0 0 24 24">
+          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+          <line x1="12" y1="19" x2="12" y2="23" />
+          <line x1="8" y1="23" x2="16" y2="23" />
+        </svg>
+      </button>
+      <button class="btn" id="send-btn" title="Send">
+        <svg viewBox="0 0 24 24">
+          <path d="M22 2L11 13" />
+          <path d="M22 2l-7 20-4-9-9-4 20-7z" />
+        </svg>
+        Send
+      </button>
+      <button class="btn" id="reset-btn" title="Reset everything">
+        <svg viewBox="0 0 24 24">
+          <polyline points="1 4 1 10 7 10" />
+          <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+        </svg>
+        Reset
+      </button>
+    </div>
+  </div>
+
+  <script>
+    /* ── DOM refs ── */
+    const video = document.getElementById('video');
+    const overlay = document.getElementById('overlay');
+    const camContainer = document.getElementById('camera-container');
+    const camWrapper = document.getElementById('camera-wrapper');
+    const messagesEl = document.getElementById('messages');
+    const chatEl = document.getElementById('chat');
+    const textInput = document.getElementById('text-input');
+    const sendBtn = document.getElementById('send-btn');
+    const micBtn = document.getElementById('mic-btn');
+    const resetBtn = document.getElementById('reset-btn');
+    const ctx = overlay.getContext('2d');
+
+    let currentBboxes = [];
+    let currentZoom = null;
+    let busy = false;
+    let isRecording = false;
+    let mediaRecorder = null;
+    let audioChunks = [];
+
+    /* ── Camera ── */
+    async function startCamera() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } },
+          audio: false
+        });
+        video.srcObject = stream;
+        camContainer.classList.remove('no-camera');
+      } catch (e) {
+        camContainer.classList.add('no-camera');
+        const s = document.getElementById('camera-status');
+        s.textContent = 'Camera unavailable: ' + e.message;
+        s.style.display = 'block';
+      }
+    }
+
+    /* ── Canvas helpers ── */
+    function getVideoRect() {
+      const cw = camContainer.clientWidth, ch = camContainer.clientHeight;
+      const vw = video.videoWidth || 1, vh = video.videoHeight || 1;
+      const ca = cw / ch, va = vw / vh;
+      let dw, dh, ox, oy;
+      if (va > ca) { dw = cw; dh = cw / va; ox = 0; oy = (ch - dh) / 2 }
+      else { dh = ch; dw = ch * va; ox = (cw - dw) / 2; oy = 0 }
+      return { dw, dh, ox, oy, vw, vh };
+    }
+
+    /* ── Alignment: constrain header/chat/input to rendered video width ── */
+    function updateAlignment() {
+      if (!video.videoWidth) return;
+      const { dw } = getVideoRect();
+      document.documentElement.style.setProperty('--video-width', dw + 'px');
+    }
+
+    function setupCanvas() {
+      const dpr = window.devicePixelRatio || 1;
+      const w = camContainer.clientWidth, h = camContainer.clientHeight;
+      overlay.width = w * dpr;
+      overlay.height = h * dpr;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+
+    function drawBboxes() {
+      const w = camContainer.clientWidth, h = camContainer.clientHeight;
+      ctx.clearRect(0, 0, w, h);
+      if (!currentBboxes.length) return;
+      const { dw, dh, ox, oy, vw, vh } = getVideoRect();
+
+      for (const det of currentBboxes) {
+        const [bx1, by1, bx2, by2] = det.bbox;
+        const x1 = bx1 / vw * dw + ox, y1 = by1 / vh * dh + oy;
+        const x2 = bx2 / vw * dw + ox, y2 = by2 / vh * dh + oy;
+
+        /* filled semi-transparent box */
+        ctx.fillStyle = 'rgba(0,212,170,.1)';
+        ctx.fillRect(x1, y1, x2 - x1, y2 - y1);
+
+        /* border */
+        ctx.strokeStyle = '#00d4aa';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+
+        /* corner accents */
+        const cl = 12;
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = '#00ffcc';
+        // top-left
+        ctx.beginPath(); ctx.moveTo(x1, y1 + cl); ctx.lineTo(x1, y1); ctx.lineTo(x1 + cl, y1); ctx.stroke();
+        // top-right
+        ctx.beginPath(); ctx.moveTo(x2 - cl, y1); ctx.lineTo(x2, y1); ctx.lineTo(x2, y1 + cl); ctx.stroke();
+        // bottom-left
+        ctx.beginPath(); ctx.moveTo(x1, y2 - cl); ctx.lineTo(x1, y2); ctx.lineTo(x1 + cl, y2); ctx.stroke();
+        // bottom-right
+        ctx.beginPath(); ctx.moveTo(x2 - cl, y2); ctx.lineTo(x2, y2); ctx.lineTo(x2, y2 - cl); ctx.stroke();
+
+        /* label */
+        if (det.label) {
+          ctx.font = '600 11px system-ui';
+          const tw = ctx.measureText(det.label).width;
+          ctx.fillStyle = 'rgba(0,212,170,.2)';
+          ctx.fillRect(x1, y1 - 20, tw + 12, 20);
+          ctx.fillStyle = '#00ffcc';
+          ctx.fillText(det.label, x1 + 6, y1 - 6);
+        }
+      }
+    }
+
+    /* ── Zoom ── */
+    function applyZoom(region) {
+      if (!region) {
+        camWrapper.style.transform = '';
+        currentZoom = null;
+        return;
+      }
+      currentZoom = region;
+      const { dw, dh, ox, oy, vw, vh } = getVideoRect();
+      const [zx1, zy1, zx2, zy2] = region;
+      const rx1 = zx1 / vw * dw + ox, ry1 = zy1 / vh * dh + oy;
+      const rx2 = zx2 / vw * dw + ox, ry2 = zy2 / vh * dh + oy;
+      const rw = rx2 - rx1, rh = ry2 - ry1;
+      const rcx = (rx1 + rx2) / 2, rcy = (ry1 + ry2) / 2;
+      const cw = camContainer.clientWidth, ch = camContainer.clientHeight;
+      const scale = Math.min(cw / rw, ch / rh);
+      const tx = cw / 2 - rcx * scale;
+      const ty = ch / 2 - rcy * scale;
+      camWrapper.style.transform = `translate(${tx}px,${ty}px) scale(${scale})`;
+    }
+
+    /* ── Frame capture ── */
+    function captureFrame() {
+      const c = document.createElement('canvas');
+      c.width = video.videoWidth;
+      c.height = video.videoHeight;
+      c.getContext('2d').drawImage(video, 0, 0);
+      return c.toDataURL('image/jpeg', 0.85).split(',')[1];
+    }
+
+    /* ── Chat messages ── */
+    function escapeHtml(t) { const d = document.createElement('div'); d.textContent = t; return d.innerHTML }
+
+    function addMsg(role, text) {
+      const div = document.createElement('div');
+      div.className = 'msg ' + role;
+      const label = role === 'user' ? 'You' : role === 'assistant' ? 'AI' : '';
+      div.innerHTML = label ? `<span class="role">${label}</span>${escapeHtml(text)}` : escapeHtml(text);
+      messagesEl.appendChild(div);
+      chatEl.scrollTop = chatEl.scrollHeight;
+      return div;
+    }
+
+    /* ── Send ── */
+    async function send(text) {
+      if (!text.trim() || busy) return;
+      if (!video.videoWidth) { addMsg('system', 'Camera not ready.'); return }
+      busy = true;
+      sendBtn.disabled = true;
+      textInput.value = '';
+
+      addMsg('user', text);
+      const thinkEl = addMsg('system', 'Analyzing…');
+      camContainer.classList.add('analyzing');
+
+      try {
+        const frame = captureFrame();
+        const resp = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text, frame })
+        });
+        const data = await resp.json();
+
+        if (thinkEl.parentNode) thinkEl.remove();
+        addMsg('assistant', data.reply);
+
+        currentBboxes = data.bboxes || [];
+        setupCanvas();
+        drawBboxes();
+        applyZoom(data.zoom_region);
+      } catch (e) {
+        if (thinkEl.parentNode) thinkEl.remove();
+        addMsg('system', 'Error: ' + e.message);
+      } finally {
+        camContainer.classList.remove('analyzing');
+        busy = false;
+        sendBtn.disabled = false;
+        textInput.focus();
+      }
+    }
+
+    /* ── Audio recording ── */
+    async function toggleRecording() {
+      if (isRecording) { mediaRecorder.stop(); return }
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorder = new MediaRecorder(stream);
+        audioChunks = [];
+        mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+        mediaRecorder.onstop = async () => {
+          stream.getTracks().forEach(t => t.stop());
+          isRecording = false;
+          micBtn.classList.remove('recording');
+          if (busy) return;
+
+          const blob = new Blob(audioChunks, { type: 'audio/webm' });
+          const thinkEl = addMsg('system', 'Processing audio…');
+          camContainer.classList.add('analyzing');
+          busy = true;
+          sendBtn.disabled = true;
+
+          try {
+            const form = new FormData();
+            form.append('audio', blob, 'recording.webm');
+            const resp = await fetch('/api/chat-audio', { method: 'POST', body: form });
+            const data = await resp.json();
+            if (thinkEl.parentNode) thinkEl.remove();
+            if (data.reply) addMsg('assistant', data.reply);
+            currentBboxes = data.bboxes || [];
+            setupCanvas();
+            drawBboxes();
+            applyZoom(data.zoom_region);
+          } catch (e) {
+            if (thinkEl.parentNode) thinkEl.remove();
+            addMsg('system', 'Audio error: ' + e.message);
+          } finally {
+            camContainer.classList.remove('analyzing');
+            busy = false;
+            sendBtn.disabled = false;
+            textInput.focus();
+          }
+        };
+        mediaRecorder.start();
+        isRecording = true;
+        micBtn.classList.add('recording');
+      } catch (e) {
+        addMsg('system', 'Microphone unavailable: ' + e.message);
+      }
+    }
+
+    /* ── Reset ── */
+    async function resetAll() {
+      currentBboxes = [];
+      currentZoom = null;
+      setupCanvas();
+      drawBboxes();
+      applyZoom(null);
+      messagesEl.innerHTML = '';
+      try { await fetch('/api/reset', { method: 'POST' }) } catch (_) { }
+      textInput.focus();
+    }
+
+    /* ── Health ── */
+    async function checkHealth() {
+      try {
+        const r = await fetch('/api/health');
+        const d = await r.json();
+        document.getElementById('fp-dot').className = 'dot ' + (d.fp ? 'ok' : 'err');
+        document.getElementById('llm-dot').className = 'dot ' + (d.llm ? 'ok' : 'err');
+        document.getElementById('llm-label').textContent = (d.llm_backend || 'LLM').toUpperCase();
+      } catch (_) {
+        document.getElementById('fp-dot').className = 'dot err';
+        document.getElementById('llm-dot').className = 'dot err';
+      }
+    }
+
+    /* ── Events ── */
+    sendBtn.addEventListener('click', () => send(textInput.value));
+    textInput.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(textInput.value) } });
+    micBtn.addEventListener('click', () => { if (busy && !isRecording) return; toggleRecording() });
+    resetBtn.addEventListener('click', resetAll);
+    new ResizeObserver(() => { setupCanvas(); drawBboxes(); updateAlignment(); if (currentZoom) applyZoom(currentZoom) }).observe(camContainer);
+    video.addEventListener('loadedmetadata', updateAlignment);
+    video.addEventListener('resize', updateAlignment);
+
+    /* ── Init ── */
+    startCamera();
+    setupCanvas();
+    updateAlignment();
+    checkHealth();
+    setInterval(checkHealth, 30000);
+    textInput.focus();
+  </script>
+</body>
+
+</html>
