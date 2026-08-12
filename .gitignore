@@ -4,3 +4,5 @@ outputs*/
 *.DS_Store
 dist/
 build/
+profiles/
+profile.sh

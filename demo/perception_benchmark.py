@@ -37,6 +37,7 @@ from falcon_perception import (
     setup_torch_config,
 )
 from falcon_perception.data import ImageProcessor, stream_samples_from_hf_dataset
+from falcon_perception.nvtx import nvtx_range
 from falcon_perception.paged_inference import (
     PagedInferenceEngine,
     SamplingParams,
@@ -110,6 +111,7 @@ def main(
     n_pages: int = 512,
     max_decode_steps_between_prefills: int = 8,
     hr_upsample_ratio: int = 8,
+    shrink_image: bool = True,
     profile: bool = False,
     profile_steps: int = 10,
     out_dir: str = "./outputs_dense/",
@@ -168,6 +170,7 @@ def main(
     sampling_params = SamplingParams(
         max_new_tokens, stop_token_ids=stop_token_ids,
         coord_dedup_threshold=0.01, hr_upsample_ratio=hr_upsample_ratio,
+        shrink_image=shrink_image,
     )
 
     # Warmup absorbs torch.compile JIT cost so the benchmark measures steady-state.
@@ -175,7 +178,8 @@ def main(
     warmup_seq = sequences[0].copy()
     warmup_seq.request_idx = 0
     with cuda_timed(reset_peak_memory=False) as warmup_timer:
-        engine.generate([warmup_seq], sampling_params=sampling_params)
+        with nvtx_range("Warmup"):
+            engine.generate([warmup_seq], sampling_params=sampling_params)
     print(f"Warmup done in {warmup_timer.elapsed:.1f}s")
 
     profiler = None
@@ -201,13 +205,14 @@ def main(
 
     torch.cuda.reset_peak_memory_stats()
     with cuda_timed() as timer:
-        engine.generate(
-            sequences,
-            sampling_params=sampling_params,
-            use_tqdm=True,
-            print_stats=True,
-            profiler=profiler,
-        )
+        with nvtx_range("Generate"):
+            engine.generate(
+                sequences,
+                sampling_params=sampling_params,
+                use_tqdm=True,
+                print_stats=True,
+                profiler=profiler,
+            )
 
     if profiler is not None:
         profiler.stop()

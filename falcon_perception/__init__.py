@@ -18,6 +18,9 @@ __all__ = [
     "get_tokenizer",
     "setup_torch_config",
     "cuda_timed",
+    "nvtx_range",
+    "is_nvtx_enabled",
+    "set_nvtx_enabled",
     "PERCEPTION_MODEL_ID",
     "PERCEPTION_300M_MODEL_ID",
     "OCR_MODEL_ID",
@@ -185,6 +188,15 @@ def setup_torch_config():
     torch._inductor.config.triton.cudagraphs = False
     torch._inductor.config.fx_graph_cache = True
     torch.set_float32_matmul_precision("high")
+
+
+# ── NVTX (re-export) ──────────────────────────────────────────────────
+
+from falcon_perception.nvtx import (  # noqa: E402
+    is_nvtx_enabled,
+    nvtx_range,
+    set_nvtx_enabled,
+)
 
 
 # ── Timing utility ────────────────────────────────────────────────────

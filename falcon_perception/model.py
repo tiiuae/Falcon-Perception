@@ -16,13 +16,14 @@ from torch.nn.attention.flex_attention import (
 )
 
 from falcon_perception import ModelArgs
-from falcon_perception.anyup import AnyUp, build_upsampler_block_mask
+from falcon_perception.anyup import AnyUp, _pool_to, build_upsampler_block_mask
 from falcon_perception.attention import (
     compiled_flex_attn_decode,
     compiled_flex_attn_prefill,
     offset_mask_mod,
 )
 from falcon_perception.kv_cache import KVCacheBase
+from falcon_perception.nvtx import nvtx_range
 from falcon_perception.rope import (
     apply_3d_rotary_emb,
     apply_golden_freqs_cis_to_visual_pos,
@@ -532,6 +533,7 @@ class FalconPerception(nn.Module):
         h_valid: int,
         w_valid: int,
         output_size: tuple[int, int] | None = None,
+        shrink_image: bool = True,
     ) -> T:
         """Upsample image features for a single image.
 
@@ -542,6 +544,8 @@ class FalconPerception(nn.Module):
             h_valid, w_valid: valid patch grid size (before padding).
             output_size: ``(out_H, out_W)``.  *None* = full pixel resolution.
                 ``(h_patch, w_patch)`` skips AnyUp entirely.
+            shrink_image: if True, area-pool RGB to ``output_size`` before AnyUp
+                when dims divide evenly (faster; small quality tradeoff).
         Returns: ``(D, H, W)`` high-res features.
         """
         ps = self.args.spatial_patch_size
@@ -567,15 +571,35 @@ class FalconPerception(nn.Module):
             output_size = (H, W)
 
         out_H, out_W = output_size
+
+        # AnyUp area-pools its query features down to ``output_size`` and its key
+        # features down to the ``(h_patch, w_patch)`` grid, so every pixel of
+        # ``image`` above ``output_size`` is encoded (at 1x1 conv, i.e. per-pixel)
+        # only to be averaged away. Shrink up front instead: the image / query /
+        # key encoders then all run at ``output_size`` rather than at full
+        # resolution. The shrink factor is ``spatial_patch_size // ratio`` (2 for
+        # the default ps=16, ratio=8), so this is exact only when it divides
+        # evenly — otherwise keep the original image and let AnyUp pool.
+        if (
+            shrink_image
+            and H > out_H
+            and W > out_W
+            and H % out_H == 0
+            and W % out_W == 0
+        ):
+            image = _pool_to(image, (out_H, out_W))
+
         upsampler_attn_mask = build_upsampler_block_mask(
             out_H, out_W, h_patch, w_patch, device=image.device,
         )
-        hr_img_features = self.itok_upsampler(
-            images=image,
-            features=lr_img_features,
-            attn_mask=upsampler_attn_mask,
-            output_size=output_size,
-        )
+        # NVTX outside compiled AnyUp.forward — avoids Dynamo graph breaks.
+        with nvtx_range("anyup"):
+            hr_img_features = self.itok_upsampler(
+                images=image,
+                features=lr_img_features,
+                attn_mask=upsampler_attn_mask,
+                output_size=output_size,
+            )
         return hr_img_features[0] # (D, out_H, out_W)
 
     def upsample_img_features(
@@ -584,6 +608,7 @@ class FalconPerception(nn.Module):
         pixel_values_NTHWC: list[T] | T,
         img_scatter_info: list[ImgScatterEntry],
         output_size: tuple[int, int] | None = None,
+        shrink_image: bool = True,
     ) -> T:
         """Upsample per-image, then stack.  Keeps peak memory bounded.
 
@@ -602,6 +627,7 @@ class FalconPerception(nn.Module):
                 h_valid=entry.h_valid_patches,
                 w_valid=entry.w_valid_patches,
                 output_size=output_size,
+                shrink_image=shrink_image,
             )
             hr_parts.append(hr_i)
         return torch.stack(hr_parts, dim=0)

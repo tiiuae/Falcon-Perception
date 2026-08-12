@@ -149,6 +149,7 @@ def _run_split(
     min_dimension: int,
     max_new_tokens: int,
     hr_upsample_ratio: int,
+    shrink_image: bool = True,
 ) -> dict:
     """Run inference + F1 evaluation for one PBench split.
 
@@ -199,6 +200,7 @@ def _run_split(
         stop_token_ids=stop_ids,
         coord_dedup_threshold=0.01,
         hr_upsample_ratio=hr_upsample_ratio,
+        shrink_image=shrink_image,
     )
 
     # ── Inference ─────────────────────────────────────────────────────────────
@@ -306,6 +308,7 @@ def main(
     min_dimension: int = 256,
     max_dimension: int = 1024,
     hr_upsample_ratio: int = 8,
+    shrink_image: bool = True,
     out_dir: str = "./eval_results/pbench/",
 ):
     """Evaluate Falcon Perception on the PBench segmentation benchmark.
@@ -325,6 +328,7 @@ def main(
         min_dimension:    Minimum image edge before force-resize.
         max_dimension:    Target longest edge for force-resize (default: 1024).
         hr_upsample_ratio: High-resolution upsampling ratio for segmentation.
+        shrink_image:     Area-pool AnyUp RGB to output_size before encode (default: True).
         out_dir:          Directory for per-split JSON results. '' disables saving.
     """
     splits_to_run = SPLITS if split == "all" else [split]
@@ -374,6 +378,7 @@ def main(
             min_dimension=min_dimension,
             max_new_tokens=max_new_tokens,
             hr_upsample_ratio=hr_upsample_ratio,
+            shrink_image=shrink_image,
         )
         all_results.append(result)
 

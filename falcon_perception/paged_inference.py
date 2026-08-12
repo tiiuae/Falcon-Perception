@@ -24,6 +24,7 @@ from falcon_perception.data import (
     tokenize_inputs,
 )
 from falcon_perception.model import FalconPerception, ImgScatterEntry
+from falcon_perception.nvtx import nvtx_range
 from falcon_perception.paged_attention import PagedKVCache
 from falcon_perception.sampling import sample_token
 
@@ -67,6 +68,9 @@ class SamplingParams:
     segmentation_threshold: float = 0.3
     coord_dedup_threshold: float = 0.00
     hr_upsample_ratio: int = 8
+    # When True, area-pool the AnyUp RGB input down to ``output_size`` before
+    # the image encoder (default). Disable to match the original full-res path.
+    shrink_image: bool = True
 
 
 @dataclass
@@ -230,7 +234,7 @@ def process_sampling_params(
 # Pick the first tier whose threshold <= your GPU.
 # Tiers are searched large-to-small so the biggest match wins.
 _GPU_PRESETS: list[tuple[int, dict]] = [
-    (79, dict(n_pages=1024,  page_size=128, max_batch_size=64, prefill_length_limit=32768, max_hr_cache_entries=256)),
+    (79, dict(n_pages=896,  page_size=128, max_batch_size=64, prefill_length_limit=32768, max_hr_cache_entries=256)),
     (47, dict(n_pages=512,  page_size=128, max_batch_size=32, prefill_length_limit=16384, max_hr_cache_entries=128)),
     (23, dict(n_pages=256,  page_size=128, max_batch_size=16,  prefill_length_limit=8192,  max_hr_cache_entries=64)),
     (15, dict(n_pages=128,  page_size=128, max_batch_size=8,  prefill_length_limit=8192,  max_hr_cache_entries=32)),
@@ -589,6 +593,7 @@ class PagedInferenceEngine:
                     h_valid=h_valid,
                     w_valid=w_valid,
                     output_size=output_size,
+                    shrink_image=seq.sampling_params.shrink_image,
                 )
 
                 # Crop to original (unpadded) pixel dimensions.
@@ -606,6 +611,12 @@ class PagedInferenceEngine:
                     seq.hr_image_features = gpu_futures[id(seq)]
 
     def prefill_sequences(self, sequences: list[Sequence]):
+        # NVTX wraps the whole engine prefill step (outside compiled regions /
+        # CUDA-graph capture). Nested "anyup" ranges fire from upsample calls.
+        with nvtx_range("prefill"):
+            self._prefill_sequences_impl(sequences)
+
+    def _prefill_sequences_impl(self, sequences: list[Sequence]):
         # NOTE: there are two kind of positional indices
         # 1. `input_pos` which count the token indices in the sequence so far
         # 2. `input_thw` which is the one used for 1+2D golden gate rope
@@ -1033,6 +1044,12 @@ class PagedInferenceEngine:
 
     def decode_step(self, sequences: list[Sequence]):
         """Sync-free decode step — no GPU→CPU reads on the hot path."""
+        # NVTX outside CUDA-graph capture/replay body — wraps graph.replay()
+        # without baking markers into the captured graph.
+        with nvtx_range("decode"):
+            self._decode_step_impl(sequences)
+
+    def _decode_step_impl(self, sequences: list[Sequence]):
         logits_BSV, h_BSD = self._decode_forward(sequences)
 
         next_token, logits, probs = sample_token(

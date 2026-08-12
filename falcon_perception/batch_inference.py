@@ -10,6 +10,7 @@ from falcon_perception.aux_output import AuxOutput
 from falcon_perception.data import ImageProcessor, load_images, tokenize_inputs, get_pos_thw, pad_sequences_left
 from falcon_perception.kv_cache import KVCacheBase
 from falcon_perception.model import FalconPerception, ImgScatterEntry
+from falcon_perception.nvtx import nvtx_range
 from falcon_perception.sampling import sample_token
 
 
@@ -230,24 +231,26 @@ class BatchInferenceEngine:
                 img_scatter_info.append(ImgScatterEntry(b, int(img_pos[0]), len(img_pos), h_v, w_v))
 
         # Prefill
-        logits_BSV, h_BSD = self.model(
-            tokens=tokens,  # Original sequence, no padding
-            rope_pos_t=pos_t,
-            rope_pos_hw=pos_hw,
-            attention_mask=attention_mask,
-            kv_cache=kv_cache,
-            pixel_values=pixel_values,
-            coord_xy=coord_xy,
-            size_hw=size_hw,
-            img_scatter_info=img_scatter_info or None,
-            flex_attn_kernel_options=self.kernel_options or None,
-        )
-
-        hr_image_features = None
-        if task == "segmentation":
-            hr_image_features = self.model.upsample_img_features(
-                h_BSD, pixel_values, img_scatter_info,
+        with nvtx_range("prefill"):
+            logits_BSV, h_BSD = self.model(
+                tokens=tokens,  # Original sequence, no padding
+                rope_pos_t=pos_t,
+                rope_pos_hw=pos_hw,
+                attention_mask=attention_mask,
+                kv_cache=kv_cache,
+                pixel_values=pixel_values,
+                coord_xy=coord_xy,
+                size_hw=size_hw,
+                img_scatter_info=img_scatter_info or None,
+                flex_attn_kernel_options=self.kernel_options or None,
             )
+
+            hr_image_features = None
+            if task == "segmentation":
+                with nvtx_range("upsample_img_features"):
+                    hr_image_features = self.model.upsample_img_features(
+                        h_BSD, pixel_values, img_scatter_info,
+                    )
 
         aux_outputs: list[AuxOutput] = [AuxOutput() for _ in range(B)]
         stop_token_ids = stop_token_ids or [self.tokenizer.eos_token_id]
@@ -292,14 +295,15 @@ class BatchInferenceEngine:
                     for i, b in enumerate(sample_w_segm.tolist()):
                         aux_outputs[b].append_segm(segm_embeds[i])
 
-            logits_BSV, h_BSD = self.model(
-                tokens=tokens_B1,
-                attention_mask=attention_mask,
-                coord_xy=xy_b2.to(self.model.dtype),
-                size_hw=hw_b2.to(self.model.dtype),
-                kv_cache=kv_cache,
-                flex_attn_kernel_options=self.kernel_options or None,
-            )
+            with nvtx_range("decode"):
+                logits_BSV, h_BSD = self.model(
+                    tokens=tokens_B1,
+                    attention_mask=attention_mask,
+                    coord_xy=xy_b2.to(self.model.dtype),
+                    size_hw=hw_b2.to(self.model.dtype),
+                    kv_cache=kv_cache,
+                    flex_attn_kernel_options=self.kernel_options or None,
+                )
 
             hit_stop_B = torch.isin(tokens_B1, stop_ids).any(dim=-1)
             should_stop_B = should_stop_B.logical_or(hit_stop_B)
