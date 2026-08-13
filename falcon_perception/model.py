@@ -581,6 +581,8 @@ class FalconPerception(nn.Module):
         # resolution. The shrink factor is ``spatial_patch_size // ratio`` (2 for
         # the default ps=16, ratio=8), so this is exact only when it divides
         # evenly — otherwise keep the original image and let AnyUp pool.
+        # Callers bucket the canvas via ``anyup_canvas_size`` (128-multiple,
+        # min 128, max ``max_image_size``) so a 768 image yields output 384.
         if (
             shrink_image
             and H > out_H

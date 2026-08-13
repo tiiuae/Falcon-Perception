@@ -21,6 +21,63 @@ from PIL import Image
 IMAGE_MEAN = [0.5, 0.5, 0.5]
 IMAGE_STD = [0.5, 0.5, 0.5]
 
+# AnyUp canvas / output are snapped to this grid so torch.compile sees a
+# handful of shapes (128, 256, ..., 1024) instead of one graph per native size.
+ANYUP_SIZE_STEP = 128
+ANYUP_SIZE_MIN = 128
+ANYUP_SIZE_MAX = 1024
+
+
+def snap_image_size(
+    size: int,
+    *,
+    step: int = ANYUP_SIZE_STEP,
+    min_size: int = ANYUP_SIZE_MIN,
+    max_size: int = ANYUP_SIZE_MAX,
+) -> int:
+    """Round *size* up to a multiple of *step*, clamped to [*min_size*, *max_size*]."""
+    size = min(max(int(size), min_size), max_size)
+    snapped = ((size + step - 1) // step) * step
+    return min(max(snapped, min_size), max_size)
+
+
+def anyup_canvas_size(
+    height: int,
+    width: int,
+    *,
+    patch_size: int = 16,
+    upsample_ratio: int = 8,
+    step: int = ANYUP_SIZE_STEP,
+    min_size: int = ANYUP_SIZE_MIN,
+    max_size: int = ANYUP_SIZE_MAX,
+) -> tuple[int, tuple[int, int]]:
+    """Square AnyUp canvas and matching HR output, both on the *step* grid.
+
+    Snaps the *output* up to a multiple of *step* (min *min_size*, max
+    ``max_size * upsample_ratio / patch_size``), then derives the canvas
+    as ``output * patch_size / upsample_ratio``.  With the defaults
+    (ps=16, ratio=8, step=128) the allowed pairs are::
+
+        canvas 256 → output 128
+        canvas 512 → output 256
+        canvas 768 → output 384
+        canvas 1024 → output 512
+
+    A 768 image therefore runs at 768 / 384 instead of always 1024 / 512.
+    Four compile shapes instead of one graph per native resolution.
+    """
+    need = max(height, width)
+    need = ((need + patch_size - 1) // patch_size) * patch_size
+    need = min(need, max_size)
+
+    native_out = need // patch_size * upsample_ratio
+    out_max = max_size // patch_size * upsample_ratio
+    out = snap_image_size(
+        native_out, step=step, min_size=min(min_size, out_max), max_size=out_max,
+    )
+    canvas = out * patch_size // upsample_ratio
+    return canvas, (out, out)
+
 
 # ── Image I/O ──────────────────────────────────────────────────────────
 
