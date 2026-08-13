@@ -247,10 +247,9 @@ class BatchInferenceEngine:
 
             hr_image_features = None
             if task == "segmentation":
-                with nvtx_range("upsample_img_features"):
-                    hr_image_features = self.model.upsample_img_features(
-                        h_BSD, pixel_values, img_scatter_info,
-                    )
+                hr_image_features = self.model.upsample_img_features(
+                    h_BSD, pixel_values, img_scatter_info,
+                )
 
         aux_outputs: list[AuxOutput] = [AuxOutput() for _ in range(B)]
         stop_token_ids = stop_token_ids or [self.tokenizer.eos_token_id]

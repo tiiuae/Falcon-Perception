@@ -525,6 +525,7 @@ class FalconPerception(nn.Module):
         pred = pred * (max_size - min_size) + min_size
         return torch.pow(2.0, pred)
 
+    @nvtx_range("upsample_single_img_features")
     def upsample_single_img_features(
         self,
         h_SD: T,
@@ -592,16 +593,15 @@ class FalconPerception(nn.Module):
         upsampler_attn_mask = build_upsampler_block_mask(
             out_H, out_W, h_patch, w_patch, device=image.device,
         )
-        # NVTX outside compiled AnyUp.forward — avoids Dynamo graph breaks.
-        with nvtx_range("anyup"):
-            hr_img_features = self.itok_upsampler(
-                images=image,
-                features=lr_img_features,
-                attn_mask=upsampler_attn_mask,
-                output_size=output_size,
-            )
+        hr_img_features = self.itok_upsampler(
+            images=image,
+            features=lr_img_features,
+            attn_mask=upsampler_attn_mask,
+            output_size=output_size,
+        )
         return hr_img_features[0] # (D, out_H, out_W)
 
+    @nvtx_range("upsample_img_features")
     def upsample_img_features(
         self,
         h_BSD: T,

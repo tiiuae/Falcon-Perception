@@ -136,14 +136,13 @@ def main(
         # Warmup absorbs torch.compile cost
         print("Warmup run ...")
         warmup_seqs = _make_sequences()
-        with cuda_timed(reset_peak_memory=False) as warmup_timer:
-            with nvtx_range("Warmup"):
-                engine.generate(
-                    warmup_seqs,
-                    sampling_params=sampling_params,
-                    use_tqdm=False,
-                    print_stats=False,
-                )
+        with cuda_timed(reset_peak_memory=False) as warmup_timer, nvtx_range("Warmup"):
+            engine.generate(
+                warmup_seqs,
+                sampling_params=sampling_params,
+                use_tqdm=False,
+                print_stats=False,
+            )
         print(f"Warmup done in {warmup_timer.elapsed:.1f}s")
 
         print("Running inference ...")

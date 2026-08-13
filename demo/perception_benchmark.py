@@ -177,9 +177,8 @@ def main(
     print("Warmup run ...")
     warmup_seq = sequences[0].copy()
     warmup_seq.request_idx = 0
-    with cuda_timed(reset_peak_memory=False) as warmup_timer:
-        with nvtx_range("Warmup"):
-            engine.generate([warmup_seq], sampling_params=sampling_params)
+    with cuda_timed(reset_peak_memory=False) as warmup_timer, nvtx_range("Warmup"):
+        engine.generate([warmup_seq], sampling_params=sampling_params)
     print(f"Warmup done in {warmup_timer.elapsed:.1f}s")
 
     profiler = None
@@ -204,15 +203,14 @@ def main(
         profiler.start()
 
     torch.cuda.reset_peak_memory_stats()
-    with cuda_timed() as timer:
-        with nvtx_range("Generate"):
-            engine.generate(
-                sequences,
-                sampling_params=sampling_params,
-                use_tqdm=True,
-                print_stats=True,
-                profiler=profiler,
-            )
+    with cuda_timed() as timer, nvtx_range("Generate"):
+        engine.generate(
+            sequences,
+            sampling_params=sampling_params,
+            use_tqdm=True,
+            print_stats=True,
+            profiler=profiler,
+        )
 
     if profiler is not None:
         profiler.stop()
