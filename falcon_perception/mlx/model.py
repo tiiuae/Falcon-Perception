@@ -19,7 +19,7 @@ import mlx.core as mx
 import mlx.nn as nn
 
 from falcon_perception import ModelArgs
-from falcon_perception.mlx.anyup import AnyUp
+from falcon_perception.mlx.anyup import AnyUp, _pool_to
 from falcon_perception.mlx.kv_cache import KVCache
 from falcon_perception.mlx.rope import (
     apply_3d_rotary_emb,
@@ -383,7 +383,14 @@ class FalconPerception(nn.Module):
         h_valid: int,
         w_valid: int,
         output_size=None,
+        shrink_image: bool = True,
     ):
+        """Upsample image features for a single image.
+
+        ``shrink_image`` area-pools RGB to ``output_size`` before AnyUp when
+        dims divide evenly (faster; small quality tradeoff). Callers bucket
+        the canvas via ``anyup_canvas_size`` so a 768 image yields output 384.
+        """
         ps = self.args.spatial_patch_size
         _, H, W, _ = pixel_values_THWC.shape
         h_patch, w_patch = H // ps, W // ps
@@ -408,6 +415,16 @@ class FalconPerception(nn.Module):
         if output_size is None:
             output_size = (H, W)
 
+        out_H, out_W = output_size
+        if (
+            shrink_image
+            and H > out_H
+            and W > out_W
+            and H % out_H == 0
+            and W % out_W == 0
+        ):
+            image = _pool_to(image, (out_H, out_W))
+
         hr_img_features = self.itok_upsampler(
             images=image,
             features=lr_img_features,
@@ -421,6 +438,7 @@ class FalconPerception(nn.Module):
         pixel_values_NTHWC,
         img_scatter_info: list[ImgScatterEntry],
         output_size=None,
+        shrink_image: bool = True,
     ):
         hr_parts = []
         for i, entry in enumerate(img_scatter_info):
@@ -431,6 +449,7 @@ class FalconPerception(nn.Module):
                 h_valid=entry.h_valid_patches,
                 w_valid=entry.w_valid_patches,
                 output_size=output_size,
+                shrink_image=shrink_image,
             )
             hr_parts.append(hr_i)
         return mx.stack(hr_parts, axis=0)

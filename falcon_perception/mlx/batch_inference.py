@@ -36,7 +36,12 @@ from falcon_perception.mlx.kv_cache import KVCache
 from falcon_perception.mlx.model import FalconPerception, ImgScatterEntry
 from falcon_perception.mlx.sampling import sample_token
 from falcon_perception.data import (
-    ImageProcessor, load_images, tokenize_inputs, get_pos_thw, pad_sequences_left,
+    ImageProcessor,
+    anyup_canvas_size,
+    get_pos_thw,
+    load_images,
+    pad_sequences_left,
+    tokenize_inputs,
 )
 
 
@@ -82,9 +87,17 @@ def process_batch_and_generate(
 
     padded_np = pad_sequences_left(all_input_ids, tokenizer.pad_token_id)
 
-    processed = processor_local.batch_images_with_mask(
-        all_selected_images, max_dimension, max_dimension,
-    )
+    if all_selected_images:
+        max_h = max(img.shape[1] for img in all_selected_images)
+        max_w = max(img.shape[2] for img in all_selected_images)
+        canvas, _ = anyup_canvas_size(
+            max_h, max_w, patch_size=patch_size, max_size=max_dimension,
+        )
+        processed = processor_local.batch_images_with_mask(
+            all_selected_images, canvas, canvas,
+        )
+    else:
+        processed = None
     assert processed is not None
 
     pos_t_np, pos_hw_np = get_pos_thw(
@@ -271,6 +284,8 @@ class BatchInferenceEngine:
         seed: int | None = None,
         coord_dedup_threshold: float = 0.01,
         task: str = "segmentation",
+        hr_upsample_ratio: int = 8,
+        shrink_image: bool = True,
     ):
         if seed is not None:
             mx.random.seed(seed)
@@ -335,8 +350,12 @@ class BatchInferenceEngine:
 
         hr_image_features = None
         if task == "segmentation" and img_scatter_info and self.model_args.perception_heads:
+            _, _, H, W, _ = pixel_values.shape
+            output_size = (H // ps * hr_upsample_ratio, W // ps * hr_upsample_ratio)
             hr_image_features = self.model.upsample_img_features(
                 h_BSD, pixel_values, img_scatter_info,
+                output_size=output_size,
+                shrink_image=shrink_image,
             )
 
         aux_outputs = [AuxOutput() for _ in range(B)]
@@ -431,7 +450,8 @@ class BatchInferenceEngine:
             prefill_np[b, L:L + len(gen)] = gen
         padded_tokens_BS = mx.array(prefill_np)
 
-        # Finalize
+        # Finalize: hr features are at AnyUp output_size; crop to the unpadded
+        # image extent scaled by hr_upsample_ratio / patch_size.
         for b in range(B):
             hr_feat_b = None
             if hr_image_features is not None:
@@ -439,8 +459,10 @@ class BatchInferenceEngine:
                 mask_b = pixel_mask[b, 0]
                 h_actual = int(np.array(mx.any(mask_b, axis=1).astype(mx.int32).sum()))
                 w_actual = int(np.array(mx.any(mask_b, axis=0).astype(mx.int32).sum()))
-                if h_actual > 0 and w_actual > 0:
-                    hr_feat_b = hr_feat_b[:, :h_actual, :w_actual]
+                h_px = (h_actual // ps) * hr_upsample_ratio
+                w_px = (w_actual // ps) * hr_upsample_ratio
+                if h_px > 0 and w_px > 0:
+                    hr_feat_b = hr_feat_b[:, :h_px, :w_px]
             aux_outputs[b].finalize(
                 hr_image_features=hr_feat_b,
                 task=task,
