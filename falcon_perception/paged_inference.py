@@ -168,15 +168,21 @@ class Sequence:
 
     @property
     def output_ids(self):
-        return torch.tensor(self._output_ids, dtype=torch.int64)
+        if not self._output_ids:
+            return torch.empty(0, dtype=torch.int64, device="cpu")
+        return torch.stack(self._output_ids).to(device="cpu", dtype=torch.int64).detach()
 
     @property
     def output_logits(self):
-        return torch.tensor(self._output_logits, dtype=torch.float32)
+        if not self._output_logits:
+            return torch.empty(0, dtype=torch.float32, device="cpu")
+        return torch.stack(self._output_logits).to(device="cpu", dtype=torch.float32).detach()
 
     @property
     def output_probs(self):
-        return torch.tensor(self._output_probs, dtype=torch.float32)
+        if not self._output_probs:
+            return torch.empty(0, dtype=torch.float32, device="cpu")
+        return torch.stack(self._output_probs).to(device="cpu", dtype=torch.float32).detach()
 
     @property
     def input_length(self):
