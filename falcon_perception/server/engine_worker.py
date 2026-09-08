@@ -394,7 +394,7 @@ def _enqueue_layout_request(engine, req, response_queue, gpu_id, log, *, layout_
         crop_det_indices.append(det_idx)
 
     if not crop_det_indices:
-        # No text-bearing regions found — return empty result immediately
+        # No text-bearing regions found; return the detected regions immediately
         response_queue.put(WorkerResponse(
             request_id=req.request_id,
             gpu_id=gpu_id,
@@ -402,6 +402,7 @@ def _enqueue_layout_request(engine, req, response_queue, gpu_id, log, *, layout_
                 text="", masks_rle=[], bboxes_raw=[],
                 image_size=(img_w, img_h),
                 input_tokens=0, output_tokens=0,
+                layout_regions=[{**det, "text": ""} for det in dets],
                 inference_time_ms=(time.monotonic() - req.enqueue_time) * 1000,
             ),
         ))
@@ -485,8 +486,6 @@ def _harvest_compound_crop(engine, seq, parent_id, response_queue, gpu_id, log):
     When all crops for a parent request are done, assemble and send the
     compound result back to the main process.
     """
-    from falcon_perception.paged_ocr_inference import LAYOUT_TO_OCR_CATEGORY
-
     state = engine._compound_state.get(parent_id)
     if state is None:
         return
@@ -521,9 +520,6 @@ def _harvest_compound_crop(engine, seq, parent_id, response_queue, gpu_id, log):
     try:
         regions = []
         for det_idx, det in enumerate(state["dets"]):
-            cat_key = det["category"].strip().lower()
-            if LAYOUT_TO_OCR_CATEGORY.get(cat_key) is None:
-                continue
             regions.append({
                 "category": det["category"],
                 "bbox": det["bbox"],
