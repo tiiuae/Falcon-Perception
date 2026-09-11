@@ -375,9 +375,7 @@ class OCRInferenceEngine(PagedInferenceEngine):
 
     @staticmethod
     def _make_ocr_prompt(category: str = "plain") -> str:
-        instruction = CATEGORY_PROMPTS.get(
-            category.strip().lower(), CATEGORY_PROMPTS["plain"]
-        )
+        instruction = CATEGORY_PROMPTS["plain"]
         return f"<|image|>{instruction}\n<|OCR_PLAIN|>"
 
     def _stop_token_ids(self) -> list[int]:

@@ -25,6 +25,8 @@ A minimal, readable yet performant PyTorch inference engine implementation of **
 > *"Extract the text content from this image."* → text / latex formulas / html table ... 
 
 
+**Announcing Falcon OCR 1.5** — our latest **270M** early-fusion OCR model. v1.5 improves **end-to-end** accuracy on full-page OCR and extends coverage to diverse domains: historical scans, handwriting, receipts, and real-world scene text — while staying ~3× smaller than 0.9B-class OCR VLMs. [Model card & benchmarks →](https://huggingface.co/tiiuae/Falcon-OCR)
+
 ## Contents
 - [Quick Start](#quick-start)
   - [Installation](#installation)
@@ -119,6 +121,8 @@ python demo/perception_single_mlx.py --image photo.jpg --query "cat" --task dete
 
 ### Run OCR (text extraction)
 
+**We recommend end-to-end OCR (`ocr_plain`, the default) for most documents** — send the full page directly to the model. Use layout + OCR only for very dense pages (e.g. multi-column newspapers).
+
 **PyTorch (GPU)**
 ```bash
 # Auto-downloads model + stream sample image from HuggingFace
@@ -144,8 +148,8 @@ python demo/ocr_single_mlx.py  # loads a demo sample from OCRBench-v2
 
 | Mode | Best for | How |
 |------|----------|-----|
-| **Plain OCR** | Simple documents, real-world photos, slides, receipts, invoices | `--task ocr_plain` |
-| **Layout + OCR** | Complex multi-column documents, academic papers, reports, dense pages | `--task ocr_layout` |
+| **End-to-end OCR** (recommended) | Photos, receipts, slides, handwriting, scans, most documents | `--task ocr_plain` (default) |
+| **Layout + OCR** | Very dense multi-column pages (newspapers, tightly packed layouts) | `--task ocr_layout` |
 
 ### Run Multiple Samples with Paged Inference Engine
 
@@ -285,10 +289,10 @@ Measured on a single A100-80GB GPU with vLLM, processing document images from ol
 |------|------:|------:|-------------|
 | **Layout + OCR** | 5,825 | 2.9 | Full pipeline: layout detection → crop → per-region OCR |
 
-At 0.3B parameters, Falcon OCR is roughly 3x smaller than 0.9B-class OCR VLMs (e.g. PaddleOCR VL), which translates directly into higher serving throughput at competitive accuracy.
+At 270M (+30M with layout model) parameters, Falcon OCR 1.5 is roughly 3× smaller than 0.9B-class OCR VLMs (e.g. PaddleOCR VL, GLM) and roughly 20x smaller than Chandra-2, which translates directly into higher serving throughput.
 
 ### Quick Start
-For production OCR serving, we also provide a Docker image (~6,000 tok/s on a single A100) that bundles vLLM with an end-to-end parsing pipeline. It exposes two services: **vLLM** (port 8000, OpenAI-compatible API) and a **Pipeline** (port 5002, layout → crop → OCR → markdown).
+For production OCR serving, we provide a Docker image (~6,000 tok/s on a single A100). It exposes **vLLM** (port 8000, OpenAI-compatible API) and a **Pipeline** (port 5002). **Prefer end-to-end parsing** (`skip_layout: true`) for most documents; use layout mode only for very dense pages.
 
 ```bash
 # Two GPUs (best throughput): vLLM on one, layout model on the other
@@ -313,15 +317,15 @@ docker run -d --name falcon-ocr \
 curl -X POST http://localhost:5002/falconocr/upload \
   -F "files=@document.pdf;type=application/pdf"
 
-# Parse with layout detection
-curl -X POST http://localhost:5002/falconocr/parse \
-  -H "Content-Type: application/json" \
-  -d '{"images": ["data:image/jpeg;base64,<...>"], "skip_layout": false}'
-
-# Parse without layout (full image → VLM directly)
+# End-to-end (recommended) — full page → model directly
 curl -X POST http://localhost:5002/falconocr/parse \
   -H "Content-Type: application/json" \
   -d '{"images": ["data:image/jpeg;base64,<...>"], "skip_layout": true}'
+
+# Layout + OCR — dense pages only (newspapers)
+curl -X POST http://localhost:5002/falconocr/parse \
+  -H "Content-Type: application/json" \
+  -d '{"images": ["data:image/jpeg;base64,<...>"], "skip_layout": false}'
 ```
 
 See the [Falcon-OCR model card](https://huggingface.co/tiiuae/Falcon-OCR) for the full API reference, configuration variables, and deployment options.
