@@ -20,7 +20,6 @@ paged KV cache management, preemption, and optional CUDA-graph replay.
 from __future__ import annotations
 
 import logging
-import random
 from pathlib import Path
 
 import torch
@@ -125,7 +124,8 @@ def dedup_overlapping_detections(
 
     When two boxes overlap above *iou_threshold*, the one with the larger area
     is retained.  If the areas are similar (min/max > *area_ratio_threshold*),
-    one is chosen at random.
+    the higher-confidence box is retained, with ties resolved by input order.
+    Detections from different categories are preserved.
     """
     if len(detections) <= 1:
         return detections
@@ -135,14 +135,14 @@ def dedup_overlapping_detections(
         if i in suppressed:
             continue
         for j in range(i + 1, len(detections)):
-            if j in suppressed:
+            if j in suppressed or detections[i]["category"] != detections[j]["category"]:
                 continue
             if _iou(detections[i]["bbox"], detections[j]["bbox"]) > iou_threshold:
                 area_i = _box_area(detections[i]["bbox"])
                 area_j = _box_area(detections[j]["bbox"])
                 ratio = min(area_i, area_j) / max(area_i, area_j) if max(area_i, area_j) > 0 else 1.0
                 if ratio > area_ratio_threshold:
-                    loser = random.choice([i, j])
+                    loser = i if detections[j]["score"] > detections[i]["score"] else j
                     suppressed.add(loser)
                     if loser == i:
                         break
@@ -157,13 +157,13 @@ def dedup_overlapping_detections(
 def filter_nested_detections(
     detections: list[dict], containment_threshold: float = 0.8
 ) -> list[dict]:
-    """Remove any box that is mostly contained within a strictly larger box."""
+    """Remove boxes mostly contained within a larger box of the same category."""
     areas = [_box_area(d["bbox"]) for d in detections]
     keep = []
     for i, det in enumerate(detections):
         is_nested = False
         for j, other in enumerate(detections):
-            if i == j:
+            if i == j or det["category"] != other["category"]:
                 continue
             if areas[j] <= areas[i]:
                 continue
@@ -373,6 +373,15 @@ class OCRInferenceEngine(PagedInferenceEngine):
             .strip()
         )
 
+    def _generation_details(self, seq: Sequence, temperature: float) -> dict:
+        token_ids = seq.output_ids.tolist()
+        return {
+            "token_ids": token_ids,
+            "token_probabilities": torch.stack(seq._output_probs).float().cpu().tolist() if seq._output_probs else [],
+            "stop_token_seen": bool(token_ids and token_ids[-1] in self._stop_token_ids()),
+            "temperature": temperature,
+        }
+
     @staticmethod
     def _make_ocr_prompt(category: str = "plain") -> str:
         instruction = CATEGORY_PROMPTS["plain"]
@@ -393,6 +402,7 @@ class OCRInferenceEngine(PagedInferenceEngine):
         *,
         category: str | list[str] = "plain",
         max_new_tokens: int = 4096,
+        return_generation: bool = False,
         temperature: float = 0.0,
         top_k: int | None = None,
         min_image_size: int = 64,
@@ -400,13 +410,15 @@ class OCRInferenceEngine(PagedInferenceEngine):
         use_tqdm: bool = True,
         print_stats: bool = False,
         profiler=None,
-    ) -> list[str]:
+    ) -> list[str] | list[dict]:
         """Full-page OCR on each image.
 
         Args:
             images: PIL images (or paths/URLs).
             category: OCR category (applied to all if a single string, or
                 one per image).  See :data:`CATEGORY_PROMPTS` for valid keys.
+            return_generation: Return text and native generation metadata instead of strings.
+                Token probabilities describe the sampling distribution, not calibrated accuracy.
             max_new_tokens: Max generation steps per sequence.
             temperature: Sampling temperature (0 = greedy).
             top_k: Top-k sampling (``None`` = disabled).
@@ -416,7 +428,7 @@ class OCRInferenceEngine(PagedInferenceEngine):
             profiler: Optional ``torch.profiler`` instance (stepped each engine step).
 
         Returns:
-            One text string per image.
+            One text string per image, or a text/generation dict when requested.
         """
         if isinstance(images, (str, Path, Image.Image)):
             images = [images]
@@ -447,6 +459,12 @@ class OCRInferenceEngine(PagedInferenceEngine):
             print_stats=print_stats,
             profiler=profiler,
         )
+        if return_generation:
+            return [
+                {"text": self._decode_seq_text(seq),
+                 "generation": self._generation_details(seq, temperature)}
+                for seq in done
+            ]
         return [self._decode_seq_text(seq) for seq in done]
 
     # ── Layout crop helpers ─────────────────────────────────────────
@@ -505,6 +523,7 @@ class OCRInferenceEngine(PagedInferenceEngine):
         images: list[Image.Image | str],
         *,
         max_new_tokens: int = 4096,
+        return_generation: bool = False,
         temperature: float = 0.0,
         top_k: int | None = None,
         min_image_size: int = 64,
@@ -528,6 +547,8 @@ class OCRInferenceEngine(PagedInferenceEngine):
 
         Args:
             images: PIL images (or paths/URLs).
+            return_generation: Include native generation metadata for recognized regions.
+                Token probabilities describe the sampling distribution, not calibrated accuracy.
             max_new_tokens: Max generation steps per crop.
             temperature: Sampling temperature (0 = greedy).
             top_k: Top-k sampling (``None`` = disabled).
@@ -542,7 +563,10 @@ class OCRInferenceEngine(PagedInferenceEngine):
 
         Returns:
             Per-image list of dicts with keys ``category``, ``bbox``
-            ``[x1, y1, x2, y2]``, ``score``, ``text``.
+            ``[x1, y1, x2, y2]``, ``score``, ``text``. Unread regions have empty
+            text. When requested, recognized regions also include ``generation``;
+            token IDs/probabilities include stop tokens and refer to the raw decode,
+            before whitespace and special-token cleanup.
         """
         self.load_layout_model(layout_model)
 
@@ -621,7 +645,13 @@ class OCRInferenceEngine(PagedInferenceEngine):
             crop_texts = [self._decode_seq_text(seq) for seq in done]
 
         # ── 5. Reassemble per-image results ───────────────────────────
-        results: list[list[dict]] = [[] for _ in range(len(pil_images))]
+        results: list[list[dict]] = [
+            [
+                {"category": d["category"], "bbox": d["bbox"], "score": d["score"], "text": ""}
+                for d in dets
+            ]
+            for dets in all_dets
+        ]
         for (img_idx, det_idx), text in zip(crop_origins, crop_texts):
             if det_idx == -1:
                 w, h = pil_images[img_idx].size
@@ -632,12 +662,13 @@ class OCRInferenceEngine(PagedInferenceEngine):
                     "text": text,
                 })
             else:
-                det = all_dets[img_idx][det_idx]
-                results[img_idx].append({
-                    "category": det["category"],
-                    "bbox": det["bbox"],
-                    "score": det["score"],
-                    "text": text,
-                })
+                results[img_idx][det_idx]["text"] = text
+
+        if return_generation and sequences:
+            for seq in done:
+                img_idx, det_idx = crop_origins[seq.request_idx]
+                results[img_idx][det_idx]["generation"] = self._generation_details(
+                    seq, temperature
+                )
 
         return results
