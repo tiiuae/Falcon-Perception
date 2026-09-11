@@ -40,7 +40,7 @@ class ServerConfig:
     compile: bool = field(default_factory=lambda: _env_bool("COMPILE", True))
     cudagraph: bool = field(default_factory=lambda: _env_bool("CUDAGRAPH", True))
     max_batch_size: int = field(default_factory=lambda: _env_int("MAX_BATCH_SIZE", 128))
-    max_seq_length: int = field(default_factory=lambda: _env_int("MAX_SEQ_LENGTH", 8192))
+    max_seq_length: int = field(default_factory=lambda: _env_int("MAX_SEQ_LENGTH", 16384))
     n_pages: int = field(default_factory=lambda: _env_int("N_PAGES", 1024))
     page_size: int = field(default_factory=lambda: _env_int("PAGE_SIZE", 128))
     prefill_length_limit: int = field(default_factory=lambda: _env_int("PREFILL_LENGTH_LIMIT", 16384))
@@ -50,7 +50,7 @@ class ServerConfig:
 
     # ── Image defaults ────────────────────────────────────────────────
     min_image_size: int = field(default_factory=lambda: _env_int("MIN_IMAGE_SIZE", 256))
-    max_image_size: int = field(default_factory=lambda: _env_int("MAX_IMAGE_SIZE", 1024))
+    max_image_size: int = field(default_factory=lambda: _env_int("MAX_IMAGE_SIZE", 1536))
     max_tokens: int = field(default_factory=lambda: _env_int("MAX_TOKENS", 8192))
 
     # ── Layout detection ──────────────────────────────────────────────

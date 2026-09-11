@@ -212,7 +212,7 @@ def _build_engine(gpu_id, config, log):
             tokenizer,
             image_processor,
             max_batch_size=config.max_batch_size,
-            max_seq_length=config.max_seq_length,
+            max_seq_length=model_args.max_seq_len,
             n_pages=config.n_pages,
             page_size=config.page_size,
             prefill_length_limit=config.prefill_length_limit,

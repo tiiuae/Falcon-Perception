@@ -47,7 +47,7 @@ def main(
     dtype: Literal["bfloat16", "float", "float32"] = "float32",
     compile: bool = True,
     cudagraph: bool = True,
-    max_new_tokens: int = 4096,
+    max_new_tokens: int = 8192,
     profile: bool = False,
     profile_steps: int = 10,
     out_dir: str = "./outputs_ocr/",
@@ -83,13 +83,12 @@ def main(
 
     image_processor = ImageProcessor(patch_size=16, merge_size=1)
 
-    cfg = engine_config_for_gpu(max_image_size=1024, dtype=model.dtype)
+    cfg = engine_config_for_gpu(max_image_size=1536, dtype=model.dtype)
     cfg.pop("max_hr_cache_entries", None)
     cfg.pop("max_image_size", None)
     print(f"Auto-config: {cfg}")
     engine = OCRInferenceEngine(
         model, tokenizer, image_processor,
-        max_seq_length=4096,
         capture_cudagraph=cudagraph,
         **cfg,
     )

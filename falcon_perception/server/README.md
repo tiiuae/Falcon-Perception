@@ -87,14 +87,14 @@ All fields live in `ServerConfig` (see `config.py`). Pass them as `--config.<fie
 | `compile` / `no-compile` | on | Enable `torch.compile` |
 | `cudagraph` / `no-cudagraph` | on | Capture CUDA graphs for decode |
 | `max-batch-size` | `128` | Max sequences in a single engine step |
-| `max-seq-length` | `8192` | Max sequence length (tokens) |
+| `max-seq-length` | `16384` | Max sequence length (tokens) |
 | `n-pages` | `1024` | Number of KV-cache pages |
 | `page-size` | `128` | Tokens per KV-cache page |
 | `prefill-length-limit` | `16384` | Max prefill length |
 | `temperature` | `0.0` | Sampling temperature |
 | `top-k` | — | Top-k sampling (disabled by default) |
 | `min-image-size` | `256` | Default min image dimension (px) |
-| `max-image-size` | `1024` | Default max image dimension (px) |
+| `max-image-size` | `1536` | Default max image dimension (px) |
 | `max-tokens` | `8192` | Default max output tokens |
 | `layout-threshold` | `0.3` | Layout detection confidence threshold (`ocr_layout`) |
 | `host` | `0.0.0.0` | Bind address |
@@ -137,7 +137,7 @@ curl -X POST http://localhost:7860/v1/predictions \
     \"task\": \"segmentation\",
     \"max_tokens\": 8192,
     \"min_image_size\": 256,
-    \"max_image_size\": 1024
+    \"max_image_size\": 1536
   }"
 ```
 

@@ -84,7 +84,7 @@ def get_model_args(variant: str):
             perception_heads=True, do_segmentation=False,
         )
     if variant == "ocr":
-        return ModelArgs(n_layers=22, head_dim=64, dim=768, ffn_dim=2304, perception_heads=False)
+        return ModelArgs(n_layers=22, head_dim=64, dim=768, ffn_dim=2304, perception_heads=False, max_seq_len=16384)
     raise ValueError("Unknown model variant")
 
 

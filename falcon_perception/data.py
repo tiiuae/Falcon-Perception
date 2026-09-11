@@ -298,7 +298,7 @@ class ImageProcessor:
         image_std: float | list[float] | None = None,
         do_convert_rgb: bool = True,
         min_pixels: int = 56 * 56,
-        max_pixels: int = 28 * 28 * 1280,
+        max_pixels: int = 28 * 28 * 1280 * 10,
         **kwargs,
     ) -> None:
         self.do_resize = do_resize

@@ -29,7 +29,7 @@ class PredictionRequest(BaseModel):
     task: Literal["segmentation", "detection", "ocr_plain", "ocr_layout"] = "segmentation"
     max_tokens: int = 8192
     min_image_size: int = 256
-    max_image_size: int = 1024
+    max_image_size: int = 1536
 
 
 # -- Response ----------------------------------------------------------------
