@@ -20,6 +20,7 @@ paged KV cache management, preemption, and optional CUDA-graph replay.
 from __future__ import annotations
 
 import logging
+import math
 import random
 from pathlib import Path
 
@@ -95,6 +96,14 @@ _MIN_CROP_DIM = 16
 # ---------------------------------------------------------------------------
 
 
+def _valid_box(bbox):
+    return (
+        all(math.isfinite(value) for value in bbox)
+        and bbox[2] > bbox[0]
+        and bbox[3] > bbox[1]
+    )
+
+
 def _box_area(bbox):
     return max(0, bbox[2] - bbox[0]) * max(0, bbox[3] - bbox[1])
 
@@ -157,7 +166,8 @@ def dedup_overlapping_detections(
 def filter_nested_detections(
     detections: list[dict], containment_threshold: float = 0.8
 ) -> list[dict]:
-    """Remove any box that is mostly contained within a strictly larger box."""
+    """Remove invalid boxes and boxes mostly contained within a larger box."""
+    detections = [d for d in detections if _valid_box(d["bbox"])]
     areas = [_box_area(d["bbox"]) for d in detections]
     keep = []
     for i, det in enumerate(detections):
@@ -463,7 +473,7 @@ class OCRInferenceEngine(PagedInferenceEngine):
         """Build OCR sequences from layout detections on a single image.
 
         Returns a list of ``(Sequence, det_idx)`` pairs.  Crops that are too
-        small or have an unrecognised layout category are skipped.
+        small, have invalid coordinates or an unrecognised category are skipped.
         """
         img_w, img_h = pil_img.size
         results: list[tuple[Sequence, int]] = []
@@ -474,6 +484,8 @@ class OCRInferenceEngine(PagedInferenceEngine):
             if ocr_cat is None:
                 continue
 
+            if not _valid_box(det["bbox"]):
+                continue
             x1, y1, x2, y2 = det["bbox"]
             x1, y1 = max(0, int(x1)), max(0, int(y1))
             x2, y2 = min(img_w, int(x2 + 0.5)), min(img_h, int(y2 + 0.5))
