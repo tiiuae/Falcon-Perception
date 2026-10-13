@@ -94,8 +94,10 @@ def load_image(image) -> Image.Image | None:
             response.raise_for_status()
             return Image.open(io.BytesIO(response.content))
         if image.endswith(".npy"):
-            img_array = io.BytesIO(np.load(image))
-            return Image.open(img_array)
+            # ``np.load`` returns the raw array, not an encoded image file, so
+            # feeding it through ``io.BytesIO`` + ``Image.open`` fails with
+            # ``UnidentifiedImageError``. Convert the array directly instead.
+            return Image.fromarray(np.load(image))
         return Image.open(image)
     if isinstance(image, np.bytes_):
         return Image.open(io.BytesIO(image))
