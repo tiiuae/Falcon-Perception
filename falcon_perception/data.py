@@ -97,7 +97,7 @@ def load_image(image) -> Image.Image | None:
             img_array = io.BytesIO(np.load(image))
             return Image.open(img_array)
         return Image.open(image)
-    if isinstance(image, np.bytes_):
+    if isinstance(image, bytes):
         return Image.open(io.BytesIO(image))
     if isinstance(image, np.ndarray):
         return Image.fromarray(image)
