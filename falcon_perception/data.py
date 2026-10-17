@@ -166,6 +166,14 @@ def resize_image_if_necessary(
         new_height = max_dimension
         new_width = int(new_height * aspect_ratio)
 
+    # Extreme aspect ratios (e.g. a 10000x100 panorama) can push the shorter
+    # side below `min_dimension` after the max-dimension clamp above. Clamp
+    # both sides back into [min_dimension, max_dimension] so the output always
+    # honours the documented contract (aspect ratio is only broken in these
+    # extreme cases, which cannot satisfy both constraints at once).
+    new_width = max(new_width, min_dimension)
+    new_height = max(new_height, min_dimension)
+
     return image.resize((new_width, new_height))
 
 
